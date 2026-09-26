@@ -40,7 +40,7 @@ Tested combinations of CUBRID server, Python version, and driver/framework.
 |-----------|---------|--------|
 | pycubrid | ≥ 1.6.1 | ✅ Required |
 | sqlalchemy-cubrid | ≥ 1.0 | ✅ Required for SQLAlchemy recipes (≥ 1.4.2 for the async `cubrid+aiopycubrid://` recipe [^async]) |
-| SQLAlchemy | 2.0–2.2 | ✅ |
+| SQLAlchemy | 2.0–2.2 | ✅ Async recipes install the `sqlalchemy[asyncio]` extra for the required greenlet runtime |
 | Flask | ≥ 3.0 | ✅ |
 | Flask-SQLAlchemy | ≥ 3.1 | ✅ |
 | FastAPI | ≥ 0.100 | ✅ |
