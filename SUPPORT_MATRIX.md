@@ -40,7 +40,7 @@ Tested combinations of CUBRID server, Python version, and driver/framework.
 |-----------|---------|--------|
 | pycubrid | ≥ 1.6.1 | ✅ Required |
 | sqlalchemy-cubrid | ≥ 1.0 | ✅ Required for SQLAlchemy recipes (≥ 1.4.2 for the async `cubrid+aiopycubrid://` recipe [^async]) |
-| SQLAlchemy | 2.0–2.2 | ✅ |
+| SQLAlchemy | 2.0–2.2 | ✅ Async recipes install the `sqlalchemy[asyncio]` extra for the required greenlet runtime |
 | Flask | ≥ 3.0 | ✅ |
 | Flask-SQLAlchemy | ≥ 3.1 | ✅ |
 | FastAPI | ≥ 0.100 | ✅ |
@@ -64,6 +64,11 @@ The cookbook ships **62 recipes**. Verification is split:
   back to SQLite for local runs.
 - The **Streamlit and Django** recipes are **run manually** (see [How to Test](#how-to-test-against-a-specific-version)),
   not in CI.
+- The **five AI agent scripts** run via `tests/test_ai_agent.py` against live
+  **11.2 and 11.4** on every smoke-test trigger, including pull requests.
+  Each script runs with a 60-second limit; the suite drops its own example
+  tables before and after each case and runs twice to verify repeatability.
+  `tests/test_ai_agent_offline.py` checks ID handling, MCP errors and cleanup.
 - **CUBRID 11.4** runs in the same CI smoke matrix as 11.2 (its `make verify` goldens
   are checked on both versions).
 

@@ -55,7 +55,7 @@ Copy-and-customize starting points for real applications:
 | [`django/`](templates/django/) | Minimal Django app on CUBRID |
 | [`async-worker/`](templates/async-worker/) | Background task processing with Celery |
 | [`batch-etl/`](templates/batch-etl/) | Data pipeline with Pandas |
-| [`ai-agent/`](templates/ai-agent/) | AI agent state store + MCP toolchain + RAG metadata |
+| [`ai-agent/`](templates/ai-agent/) | AI agent state store + MCP toolchain + RAG metadata (5 live-tested scripts) |
 | [`dashboard/`](templates/dashboard/) | Interactive dashboard with Streamlit |
 
 ### Performance
