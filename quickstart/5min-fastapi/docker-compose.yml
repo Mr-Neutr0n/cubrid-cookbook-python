@@ -16,6 +16,8 @@ services:
 
   api:
     build: .
+    environment:
+      CUBRID_HOST: cubrid
     depends_on:
       cubrid:
         condition: service_healthy

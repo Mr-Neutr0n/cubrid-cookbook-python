@@ -35,11 +35,15 @@ Docker로 CUBRID + FastAPI 앱을 5분 안에 띄웁니다.
 
 ```bash
 cd quickstart/5min-fastapi
-docker compose up -d
+docker compose up -d --wait cubrid
 pip install -r requirements.txt
 uvicorn app:app --reload
 # http://localhost:8000/docs 접속
 ```
+
+호스트에서 실행한 API는 기본적으로 `localhost`에 연결합니다 (`CUBRID_HOST`로 변경 가능).
+API와 데이터베이스를 모두 Docker에서 실행하려면 같은 디렉터리에서
+`docker compose up -d --build`를 사용하세요. Compose는 API에 `CUBRID_HOST=cubrid`를 설정합니다.
 
 ### 마이그레이션 가이드
 
