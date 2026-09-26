@@ -33,6 +33,16 @@ pip install pycubrid
 pip install sqlalchemy-cubrid
 ```
 
+For the async SQLAlchemy recipe, install its own requirements:
+
+```bash
+pip install -r fundamentals/async/requirements.txt
+```
+
+The `sqlalchemy[asyncio]>=2.0` target includes SQLAlchemy's required `greenlet`
+runtime. Installing plain `sqlalchemy` can omit that runtime, so importing
+`sqlalchemy.ext.asyncio` fails on a fresh SQLAlchemy 2.1 environment.
+
 ## Connection Info
 
 | Setting | Value |
