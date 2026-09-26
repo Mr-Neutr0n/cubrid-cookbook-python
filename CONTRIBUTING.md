@@ -91,6 +91,29 @@ that owns an `expected/` folder has no matching `expected/<name>.expected`
 golden. To opt a script out, add it to `scripts/verify_exclusions.txt` with a
 reason — but prefer making the example deterministic and adding a golden.
 
+#### Release smoke dependencies
+
+The smoke job selects `pycubrid` and `sqlalchemy-cubrid` from the package index,
+then freezes their exact installed versions with `scripts/release_smoke.py`.
+Every subsequent dependency install uses these constraints, including example
+requirements, framework test dependencies, and the MCP server. An incompatible
+requirement fails the job instead of replacing a selected driver.
+
+After all installs, the job checks the driver versions and package-index origin
+before recording **Tested upstream versions** and running examples or suites.
+A same-version VCS or local install is also rejected. Golden-backed requirements
+must use published driver releases; the `pycubrid`, `connect`, and `orm-basics`
+fundamentals require the current `>=1.7,<2` release line. The MCP server's
+intentional dispatch-ref/tag fallback remains separate from this driver policy.
+This does not resolve the timing gap between an upstream tag dispatch and its
+subsequent PyPI publication: the report identifies the releases actually installed.
+
+Run the smoke dependency guards without a database or network:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_release_smoke.py' -v
+```
+
 #### Excluded from golden verification
 
 Some examples are **intentionally** outside `make verify`. They are still real,

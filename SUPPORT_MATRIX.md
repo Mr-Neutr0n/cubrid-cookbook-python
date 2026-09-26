@@ -50,6 +50,18 @@ Tested combinations of CUBRID server, Python version, and driver/framework.
 
 [^async]: The sync SQLAlchemy dialect (`cubrid+pycubrid://`) works from `sqlalchemy-cubrid` 1.0. The async dialect (`cubrid+aiopycubrid://`, used by `fundamentals/async/02_async_sqlalchemy.py`) first became installable from PyPI in 1.2.3 (its entry points were missing from the 1.2.0–1.2.1 releases and 1.2.2 was yanked; 1.2.1 only shipped the `get_pool_class()`/`create_async_engine()` fix), and this cookbook pins it to `≥ 1.4.2` to match the floor of the other advanced SQLAlchemy recipes (pandas, ORM, Django, dashboard).
 
+The `fundamentals/pycubrid`, `fundamentals/connect`, and `fundamentals/orm-basics`
+requirements use `pycubrid>=1.7,<2`; ORM basics also uses
+`sqlalchemy-cubrid>=1.7,<2`. These example-specific floors do not change the
+minimum versions for other recipes in the table above.
+
+The smoke workflow selects published drivers, constrains all later dependency
+installs to those exact versions, and verifies their versions and package-index
+origin after installation. Its **Tested upstream versions** summary describes the
+drivers actually exercised, rather than versions recorded before example installs.
+Conflicting requirements or VCS/local replacements fail the job. See
+[Release smoke dependencies](CONTRIBUTING.md#release-smoke-dependencies).
+
 ## Recipe Coverage
 
 The cookbook ships **62 recipes**. Verification is split:

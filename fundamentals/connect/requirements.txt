@@ -1,1 +1,1 @@
-pycubrid @ git+https://github.com/cubrid-lab/pycubrid.git@main
+pycubrid>=1.7,<2

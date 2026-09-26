@@ -137,6 +137,9 @@ jobs:
         # Always full-repo (not scoped) and needs no database.
         run: python scripts/check_expected_coverage.py
 
+      - name: Check release smoke guards (offline)
+        run: python -m unittest discover -s tests -p 'test_release_smoke.py' -v
+
       - name: Cache pip downloads
         uses: actions/cache@v4
         with:
@@ -148,6 +151,18 @@ jobs:
           restore-keys: |
             pip-smoke-${{ runner.os }}-
 
+      - name: Select released drivers
+        run: pip install pycubrid sqlalchemy sqlalchemy-cubrid
+
+      - name: Freeze selected driver releases
+        run: |
+          python scripts/release_smoke.py freeze \
+            --state "$RUNNER_TEMP/release-drivers.json" \
+            --constraints "$RUNNER_TEMP/release-constraints.txt"
+          # All later pip installs, including transitive dependencies and the
+          # intentional MCP git-tag fallback, must preserve the chosen releases.
+          echo "PIP_CONSTRAINT=$RUNNER_TEMP/release-constraints.txt" >> "$GITHUB_ENV"
+
       - name: Install dependencies
         env:
           # Pass the untrusted repository_dispatch payload through the environment
@@ -156,10 +171,7 @@ jobs:
           UPSTREAM_PACKAGE: ${{ github.event.client_payload.package }}
           UPSTREAM_REF: ${{ github.event.client_payload.ref }}
         run: |
-          pip install pycubrid sqlalchemy sqlalchemy-cubrid
-          # Extra deps used by templates (e.g. batch-etl). Installed separately
-          # so the released pycubrid/sqlalchemy-cubrid above are not overridden
-          # by the git-pinned versions in the template requirements files.
+          # PIP_CONSTRAINT keeps the selected drivers fixed during every install.
           pip install pandas matplotlib
           # cubrid-mcp-server is on PyPI (v0.4.0+). Install from PyPI; the
           # dispatched ref is recorded but the PyPI wheel is the dogfood target.
@@ -173,19 +185,6 @@ jobs:
           fi
           pip install cubrid-mcp-server \
             || pip install "git+https://github.com/cubrid-lab/cubrid-mcp-server.git@${MCP_REF}"
-
-      - name: Record tested versions
-        run: |
-          {
-            echo "### Tested upstream versions";
-            echo "";
-            echo "| Package | Version |";
-            echo "| --- | --- |";
-            for pkg in pycubrid sqlalchemy-cubrid cubrid-mcp-server; do
-              ver=$(pip show "$pkg" | awk -F': ' '/^Version:/ {print $2}');
-              echo "| $pkg | ${ver:-not installed} |";
-            done
-          } | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Wait for CUBRID readiness
         run: |
@@ -246,29 +245,27 @@ jobs:
         # Golden-verified examples may declare their own requirements.txt (e.g.
         # fundamentals/alembic needs alembic). Install the requirements of every
         # example root that owns an expected/ folder so `make verify` can import
-        # them. Scoped to expected-owning roots on purpose: excluded long-running
-        # templates pin git refs that would override the released pycubrid /
-        # sqlalchemy-cubrid installed above.
+        # them. Every install uses the exact selected driver-release constraints;
+        # incompatible requirements fail rather than replacing a tested release.
         run: |
-          python - <<'PY'
-          import subprocess
-          import sys
-          from pathlib import Path
+          python scripts/release_smoke.py install-examples --constraints "$PIP_CONSTRAINT"
 
-          roots = sorted(
-              {p.parent for p in Path(".").glob("**/expected") if p.is_dir()}
-          )
-          for root in roots:
-              if any(part.startswith(".") for part in root.parts):
-                  continue
-              req = root / "requirements.txt"
-              if not req.is_file():
-                  continue
-              print(f"Installing example requirements: {req}", file=sys.stderr)
-              subprocess.check_call(
-                  [sys.executable, "-m", "pip", "install", "-r", str(req)]
-              )
-          PY
+      - name: Install pytest suite dependencies (non-PR runs only)
+        # Pull requests skip the full pytest suites; ci.yml exercises representative
+        # recipes. Install all dependencies before recording the tested versions.
+        if: github.event_name != 'pull_request'
+        # One explicit list avoids conflicting pins in individual recipe files.
+        # PIP_CONSTRAINT also covers these packages' transitive driver requirements.
+        run: pip install flask flask-sqlalchemy fastapi email-validator httpx pytest pytest-asyncio
+
+      - name: Record tested versions
+        run: |
+          set -o pipefail
+          # Fail if a driver version or package-index provenance changed, including
+          # a same-version VCS/local replacement. Only then publish the summary.
+          python scripts/release_smoke.py verify \
+            --state "$RUNNER_TEMP/release-drivers.json" --report \
+            | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Run make verify
         run: make verify VERIFY_PATHS="${VERIFY_PATHS:-.}"
@@ -354,20 +351,6 @@ jobs:
               )
           print("cubrid-mcp-server real-usage smoke OK")
           PY
-
-      - name: Install pytest suite dependencies (non-PR runs only)
-        # Pull requests skip the pytest suites so the PR gate stays fast: ci.yml
-        # runs one representative recipe per framework there (#140). The full
-        # matrix runs on push to main, the nightly schedule, upstream releases
-        # and manual dispatch, like the full `make verify` above.
-        if: github.event_name != 'pull_request'
-        # The Flask and FastAPI recipe suites run in this job's environment. One
-        # explicit list instead of each recipe's requirements.txt: those files pin
-        # different versions (api-service-fastapi recipe 10 pins pytest==8.3.3, for
-        # example), so installing them one after another would downgrade packages
-        # under the other suites. pycubrid and sqlalchemy-cubrid are not listed, so
-        # the releases installed above stay the versions under test.
-        run: pip install flask flask-sqlalchemy fastapi email-validator httpx pytest pytest-asyncio
 
       - name: Run Flask and FastAPI pytest suites (non-PR runs only)
         if: github.event_name != 'pull_request'
