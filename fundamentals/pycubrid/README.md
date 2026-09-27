@@ -28,6 +28,9 @@ make up
 pip install -r requirements.txt
 ```
 
+These recipes use the published `pycubrid>=1.7,<2` release line. The smoke
+workflow constrains installation to its selected published driver version.
+
 ## Examples
 
 | File | Topic | Key Concepts |
