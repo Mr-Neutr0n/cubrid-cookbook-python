@@ -22,6 +22,7 @@ def wait_for_cubrid(
 ) -> int:
     deadline = time.monotonic() + timeout
     last_error = "No readiness response"
+    last_response = ""
     while (remaining := deadline - time.monotonic()) > 0:
         try:
             response = subprocess.run(
@@ -34,8 +35,9 @@ def wait_for_cubrid(
             if response.returncode == 0:
                 print("CUBRID is ready: the in-container csql query passed.")
                 return 0
-            last_error = response.stderr.strip() or response.stdout.strip()
-            last_error = last_error or f"Readiness command exited {response.returncode}"
+            last_response = response.stderr.strip() or response.stdout.strip()
+            last_response = last_response or f"Readiness command exited {response.returncode}"
+            last_error = last_response
         except subprocess.TimeoutExpired:
             last_error = "Readiness probe timed out"
         except OSError as error:
@@ -44,6 +46,8 @@ def wait_for_cubrid(
         time.sleep(min(interval, max(0, deadline - time.monotonic())))
 
     print(f"CUBRID readiness failed within {timeout:g}s: {last_error}", file=sys.stderr)
+    if last_response and last_response != last_error:
+        print(f"Last failed readiness response: {last_response}", file=sys.stderr)
     for arguments in (["ps"], ["logs", "--tail", "50", "cubrid"]):
         try:
             response = subprocess.run(

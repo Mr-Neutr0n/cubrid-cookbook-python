@@ -11,6 +11,9 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+WAIT_TIMEOUT = 1.5
+PROBE_TIMEOUT = 0.5
+PROCESS_MARGIN = 3
 
 
 class ReadinessCommandTests(unittest.TestCase):
@@ -22,6 +25,8 @@ class ReadinessCommandTests(unittest.TestCase):
         self.log = self.root / "commands.log"
 
     def fake_compose(self, mode: str) -> str:
+        if self.log.exists():
+            self.log.unlink()
         self.compose.write_text(
             "import sys, time\n"
             "from pathlib import Path\n"
@@ -43,7 +48,7 @@ class ReadinessCommandTests(unittest.TestCase):
         )
         return shlex.join([sys.executable, str(self.compose)])
 
-    def wait(self, mode: str, *, timeout: str = "0.5"):
+    def wait(self, mode: str, *, timeout: str = str(WAIT_TIMEOUT)):
         command = [
             sys.executable,
             str(ROOT / "scripts/wait_for_cubrid.py"),
@@ -52,13 +57,14 @@ class ReadinessCommandTests(unittest.TestCase):
             "--timeout",
             timeout,
             "--probe-timeout",
-            "0.15",
+            str(PROBE_TIMEOUT),
             "--interval",
             "0.01",
         ]
         started = time.monotonic()
-        result = subprocess.run(command, capture_output=True, text=True, timeout=3)
-        self.assertLess(time.monotonic() - started, 2.5)
+        outer_timeout = WAIT_TIMEOUT + 2 * PROBE_TIMEOUT + PROCESS_MARGIN
+        result = subprocess.run(command, capture_output=True, text=True, timeout=outer_timeout)
+        self.assertLess(time.monotonic() - started, outer_timeout)
         return result
 
     def test_immediate_success(self) -> None:
@@ -91,6 +97,11 @@ class ReadinessCommandTests(unittest.TestCase):
                 result = self.wait(mode)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn("ps", self.log.read_text())
+                self.assertIn("logs --tail 50 cubrid", self.log.read_text())
+                if mode == "diagnostics-hang":
+                    self.assertIn("diagnostics failed", result.stderr)
+                else:
+                    self.assertIn("exit 7", result.stderr)
 
     def test_invalid_budget_does_not_run_compose(self) -> None:
         for value in ("0", "-1", "nan", "inf"):
@@ -109,17 +120,18 @@ class ReadinessCommandTests(unittest.TestCase):
                 "up",
                 f"DOCKER_COMPOSE={self.fake_compose('fail')}",
                 f"PYTHON={sys.executable}",
-                "UP_TIMEOUT=0.5",
-                "UP_PROBE_TIMEOUT=0.15",
+                f"UP_TIMEOUT={WAIT_TIMEOUT}",
+                f"UP_PROBE_TIMEOUT={PROBE_TIMEOUT}",
                 "UP_INTERVAL=0.01",
             ],
             cwd=ROOT,
             capture_output=True,
             text=True,
-            timeout=3,
+            timeout=WAIT_TIMEOUT + 2 * PROBE_TIMEOUT + PROCESS_MARGIN,
         )
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("CUBRID readiness failed", result.stdout + result.stderr)
+        self.assertIn("fake database unavailable", result.stdout + result.stderr)
         self.assertIn("Compose ps", result.stderr)
         self.assertNotIn("down", self.log.read_text())
 
