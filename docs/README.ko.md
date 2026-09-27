@@ -161,6 +161,18 @@ docker compose up -d
 
 PR 환영합니다! 각 예제는 자립적으로 실행 가능해야 합니다. [`CONTRIBUTING.md`](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/CONTRIBUTING.md) 참고.
 
+### 첫 기여
+
+CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선택하세요:
+
+- 문서와 실행 가능한 예제: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
+- 순수 Python 드라이버 수정: [pycubrid](https://github.com/cubrid-lab/pycubrid)
+- SQLAlchemy 방언 수정: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+
+대부분의 첫 이슈는 CONTRIBUTING.md의 오프라인 검사만으로 개발하고 테스트할 수 있습니다 — Docker나 CUBRID 서버가 필요 없습니다. 실제 CUBRID 검증은 CI와 메인테이너가 완료할 수 있습니다.
+
+열려 있는 [`good first issue`](https://github.com/cubrid-lab/cubrid-cookbook-python/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) 작업을 둘러보세요.
+
 ## 고지
 
 > 이 프로젝트는 CUBRID 개발자 도구를 위한 독립 오픈소스 이니셔티브인 [CUBRID Lab](https://github.com/cubrid-lab)의 일부이며, CUBRID Corporation 또는 공식 CUBRID 프로젝트와 제휴·후원·보증 관계가 없습니다.
