@@ -59,7 +59,11 @@ The smoke workflow selects published drivers, constrains all later dependency
 installs to those exact versions, and verifies their versions and package-index
 origin after installation. Its **Tested upstream versions** summary describes the
 drivers actually exercised, rather than versions recorded before example installs.
-Conflicting requirements or VCS/local replacements fail the job. See
+Conflicting requirements or VCS/local replacements fail the job. Release dispatches
+also install the exact requested package version, with bounded PyPI publication
+retry, and verify it after all dependency installs. The final summary includes
+requested/installed versions, origin, verification commit, actual server version
+when available, and result even on failed runs. See
 [Release smoke dependencies](CONTRIBUTING.md#release-smoke-dependencies).
 
 ## Recipe Coverage
