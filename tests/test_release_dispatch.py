@@ -206,6 +206,16 @@ class ReleaseDispatchTests(unittest.TestCase):
         self.assertIn("SMOKE_RESULT: ${{ job.status }}", workflow[report:])
         self.assertIn("CUBRID_SERVER_VERSION=", workflow)
 
+    def test_inline_workflow_commands_with_colon_are_yaml_quoted(self) -> None:
+        # Shell quotes around a label do not quote the surrounding YAML scalar.
+        # This narrow guard catches that regression; actual YAML parsing is separate.
+        workflow = (ROOT / ".github/workflows/smoke-test.yml").read_text()
+        for line in workflow.splitlines():
+            if line.lstrip().startswith("run:"):
+                value = line.lstrip()[4:].strip()
+                if ": " in value:
+                    self.assertTrue(value.startswith(("|", ">", "'", '"')), line)
+
     def test_summary_exposes_request_actual_origin_commit_server_and_result(self) -> None:
         self.payload()
         smoke.freeze(
