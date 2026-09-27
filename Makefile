@@ -41,7 +41,7 @@ verify: check-coverage ## Verify example outputs against expected results (VERIF
 	for root in "$${roots[@]}"; do \
 		if [ ! -d "$$root" ]; then echo "ERROR: Verify root is not a directory: $$root" >&2; exit 1; fi; \
 	done; \
-	if ! expected_files=$$(find "$${roots[@]}" -type f -path '*/expected/*.expected' | sort); then \
+	if ! expected_files=$$(find "$${roots[@]}" -path '*/expected/*.expected' | sort); then \
 		echo "ERROR: Golden discovery failed" >&2; exit 1; \
 	fi; \
 	if [ -z "$$expected_files" ]; then echo "ERROR: No golden targets found" >&2; exit 1; fi; \

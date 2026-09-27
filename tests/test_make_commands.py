@@ -89,6 +89,25 @@ class VerifyCommandTests(unittest.TestCase):
         env = self.fake_command("cat", "printf '%s\\n' row; exit 7")
         self.assertNotEqual(self.verify(env=env).returncode, 0)
 
+    def test_symlinked_golden_is_still_verified(self) -> None:
+        self.example()
+        expected = self.root / "recipes/expected/ok.expected"
+        source = self.root / "row.txt"
+        source.write_text("row\n", encoding="utf-8")
+        expected.unlink()
+        expected.symlink_to(source)
+        result = self.verify()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("1 passed, 0 failed, 0 skipped", result.stdout)
+
+    def test_expected_directory_is_not_silently_omitted(self) -> None:
+        self.example()
+        self.example(name="unreadable")
+        expected = self.root / "recipes/expected/unreadable.expected"
+        expected.unlink()
+        expected.mkdir()
+        self.assertNotEqual(self.verify().returncode, 0)
+
     def test_recipe_failure_is_reported_and_other_recipes_still_run(self) -> None:
         self.example(name="bad", code="raise SystemExit(7)")
         self.example(name="good")
