@@ -212,6 +212,21 @@ class DocsReasonWorkflowTests(unittest.TestCase):
             "<script>\nDocs: not needed - hidden",
         ):
             self.assertFalse(has_docs_not_needed_reason(source))
+        for unfinished in (
+            "<!--\nDocs: not needed - hidden",
+            '<blockquote title="\nDocs: not needed - hidden',
+        ):
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    "<!--\nDocs: not needed - hidden\n-->\nDocs: not needed - tests only\n"
+                    + unfinished
+                )
+            )
+        for source in (
+            "Docs: not needed - use < in fixture text",
+            "<blockquote>hidden</blockquote>\nDocs: not needed - tests only",
+        ):
+            self.assertTrue(has_docs_not_needed_reason(source))
         self.assertTrue(
             has_docs_not_needed_reason(
                 "> quote\n<!--\n# Details\nDocs: not needed - hidden\n-->\nDocs: not needed - tests only"

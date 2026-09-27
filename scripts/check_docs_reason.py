@@ -280,10 +280,11 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
         else:
             html.feed_literals(line + "\n", number, 0, origin)
         if re.match(r" {0,3}" + re.escape(prefix), line):
+            html.checkpoint()
             position = origin + len(line) - len(line.lstrip(" "))
             if not _placeholder(line.lstrip(" ")[len(prefix) :]):
                 candidates.append((number, position))
-    html.close()
+    html.checkpoint()
     for number, position in candidates:
         line = html.lines.get(number, "").lstrip(" ")
         inside = any(start <= position < end for start, end in html.inline_spans)
