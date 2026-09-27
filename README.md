@@ -32,11 +32,15 @@ Get a working CUBRID + FastAPI app running with Docker in under 5 minutes.
 
 ```bash
 cd quickstart/5min-fastapi
-docker compose up -d
+docker compose up -d --wait cubrid
 pip install -r requirements.txt
 uvicorn app:app --reload
 # Open http://localhost:8000/docs
 ```
+
+The host-run API connects to `localhost` by default (`CUBRID_HOST` overrides it).
+To run both the API and database in Docker instead, use `docker compose up -d --build`
+in that directory; Compose sets `CUBRID_HOST=cubrid` for the API.
 
 ### Migration Guide
 

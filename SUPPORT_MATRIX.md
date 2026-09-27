@@ -64,6 +64,9 @@ The cookbook ships **62 recipes**. Verification is split:
   back to SQLite for local runs.
 - The **Streamlit and Django** recipes are **run manually** (see [How to Test](#how-to-test-against-a-specific-version)),
   not in CI.
+- The **FastAPI quickstart** has an offline pytest suite in PR CI for host and
+  Compose configuration, startup, HTTP responses, and database failure cleanup.
+  It uses mocked DB-API connections rather than a live server.
 - The **five AI agent scripts** run via `tests/test_ai_agent.py` against live
   **11.2 and 11.4** on every smoke-test trigger, including pull requests.
   Each script runs with a 60-second limit; the suite drops its own example

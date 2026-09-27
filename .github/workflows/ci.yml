@@ -24,6 +24,19 @@ jobs:
       - name: Ruff format check
         run: ruff format --check .
 
+  quickstart-tests:
+    name: FastAPI quickstart (offline)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install quickstart and test dependencies
+        run: pip install -r quickstart/5min-fastapi/requirements.txt pytest httpx
+      - name: Test host configuration and database lifecycle
+        run: python -m pytest quickstart/5min-fastapi/tests -q
+
   docs-sync:
     name: Docs sync gate
     runs-on: ubuntu-latest
