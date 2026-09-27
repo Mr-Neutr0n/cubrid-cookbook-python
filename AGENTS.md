@@ -36,6 +36,12 @@ fundamentals/      → Step-by-step reference for core operations
 
 All non-trivial work across cubrid-lab repositories MUST follow this 4-phase cycle:
 
+Maintainers coordinate Oracle/Codex reviews, project-specific agent/tool setup,
+release classification, labels, and integration. Outside contributors provide
+normal motivation, code, tests and docs; no Oracle or agent installation is a
+contribution prerequisite. Preserve actual contributor authorship and add tool
+attribution only when that tool was used for the commit.
+
 1. **Oracle Design Review** — Consult Oracle before implementation to validate architecture, API surface, and approach. Raise concerns early.
 2. **Implementation** — Build the feature/fix with tests. Follow existing codebase patterns.
 3. **Documentation Update** — Update ALL affected docs (README, CHANGELOG, ROADMAP, API docs, SUPPORT_MATRIX, PRD, etc.) in the same PR or as an immediate follow-up. Code without doc updates is incomplete.
@@ -45,10 +51,15 @@ Skipping any phase requires explicit justification. Trivial changes (typos, sing
 
 ## Validation
 
-- `docker compose up -d` (starts CUBRID 11.2)
+- `make check` from the repository root (offline contributor checks)
+- `make up` (starts CUBRID 11.2 with bounded readiness checking)
 - Run the relevant example: `python <file>.py`
-- Verify output matches expected behavior
-- `docker compose down`
+- `make verify VERIFY_PATHS=<example-directory>` for matching live goldens
+- `make docs` for staged docs and strict MkDocs validation
+- `make down` after live checks
+
+Record executed commands/results separately from AI review and checks not run.
+Explain gaps; maintainers coordinate the remaining required CI/live validation.
 
 ## Issue Labeling (cubrid-lab org standard)
 
@@ -68,6 +79,10 @@ Do not introduce variants such as `priority:high`, `priority-high`, `P1`, or
 create it with the exact name above before filing the issue. This policy governs
 new issue creation, not bulk renaming or relabeling existing issues unless
 explicitly requested.
+
+Maintainers/triagers own label assignment and creation in the authorized filing
+or triage workflow. Reporters describe urgency and scope without needing GitHub
+label permissions; agents filing for maintainers retain the canonical rules.
 
 Priority reflects urgency and impact; size estimates implementation effort and
 helps contributors pick appropriately scoped work.
@@ -95,7 +110,21 @@ Rules:
 
 Any change that adds, renames, removes, or alters the behavior of an example — or changes supported CUBRID/driver/Python versions — MUST update the matching documentation in the **same PR**. At minimum keep in sync: `SUPPORT_MATRIX.md`, `CHANGELOG.md`, `README.md` (incl. version badges/claims), and any affected `docs/`.
 
-If no documentation change is needed, state the reason explicitly in the PR body as `Docs: not needed - <reason>` or apply the `docs-not-needed` label. This is enforced by the `docs-sync` CI check (which complements phase 3 of the workflow above).
+If no documentation change is needed, put a real, nonempty reason on a standalone
+`Docs: not needed - <reason>` PR-body line, outside quotes/comments/code fences.
+The literal placeholder is not a reason. The existing `docs-not-needed` label is
+a maintainer-managed alternative for the docs gate only.
+
+Contributors may request translation help with a language and reason; the request
+does not authorize a bypass. Keep Korean synchronization required and community
+languages advisory. Only the existing maintainer-approved `translations-deferred`
+label skips translation enforcement; maintainers record and own follow-up.
+
+Shared doc-lint/live-smoke callers are pinned to reviewed upstream commits.
+Before updating, verify the commit, workflow files and inputs, preserve caller
+inputs/permissions/advisory mode, and run checks through a PR. Upstream doc-lint
+still downloads its scanner/configuration from main, so the pin is not a claim
+that every fetched resource is immutable.
 
 Do not mark work complete until code, tests, and documentation are consistent.
 

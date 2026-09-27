@@ -19,6 +19,12 @@ All non-trivial work follows the cubrid-lab 4-phase cycle. Every change to an
 example ships its implementation, its tests, and its docs **together** — code
 without doc updates is considered incomplete.
 
+Contributors provide the motivation, implementation, tests, and matching docs.
+Maintainers coordinate project-specific Oracle/Codex reviews, agent tooling,
+labels, release classification, and integration. You do not need to install an
+agent or Oracle tool to contribute; ordinary design discussion and PR review
+provide the handoff to those maintainer responsibilities.
+
 1. **Design review** — Validate the approach and API surface before building.
 2. **Implementation** — Build the feature/fix with tests, following existing patterns.
 3. **Documentation update** — Update ALL affected docs (README, SUPPORT_MATRIX,
@@ -89,11 +95,12 @@ docs/                # Internal docs (PRD, agent playbook)
 make up
 
 # Example: run a FastAPI template
-cd templates/api-service-fastapi
+cd templates/api-service-fastapi/recipes/01-basic-crud
 pip install -r requirements.txt
-uvicorn app:app --reload
+uvicorn main:app --reload
 
-# Example: run a fundamental
+# After stopping Uvicorn, return to the repository root for a fundamental
+cd ../../../..
 python fundamentals/pycubrid/01_connect.py
 ```
 
@@ -240,13 +247,38 @@ ruff format .
 - Keep PRs focused — one example or fix per PR.
 - Write a clear title and description explaining _what_ and _why_.
 - Reference any related issues (e.g., `Fixes #42`).
-- Include output demonstrating the example works.
+- Record commands actually executed, their results, and any checks not run with
+  the reason. Optional AI/tool review is separate evidence and does not replace
+  lint, tests, documentation checks, or live compatibility validation.
+
+Behavior, SQL, installation, and compatibility changes need matching source docs
+in the same PR. If docs are genuinely unaffected, add a standalone, unfenced line
+such as `Docs: not needed - only regression test data changed` to the PR body.
+Use a plain line in its own paragraph, separated from quoted examples by a blank line.
+The docs gate rejects blank reasons, the literal `<reason>` placeholder, and
+markers shown only in quotes, comments, or fenced examples. The existing
+`docs-not-needed` label remains a maintainer-managed exception for this gate.
+
+If you need translation help, name the missing language and reason in the PR.
+This request does not bypass checks: Korean README synchronization remains
+required, while other community translation drift is advisory. Only explicit
+maintainer approval via the existing `translations-deferred` label skips that
+gate; maintainers record and own the follow-up.
+
+The shared documentation-lint and live-smoke callers use reviewed commit SHAs.
+Maintainers update them through a PR after verifying the upstream commit,
+workflow files and inputs, while retaining caller inputs, permissions and gates.
+The documentation scanner and configuration still download from upstream main;
+pinning the caller alone does not freeze those resources.
 
 ### Review Process
 
 - All PRs require at least one review before merge.
 - CI must pass (lint checks).
 - Examples must be tested against a live CUBRID instance.
+
+Explain unavailable local checks so maintainers can arrange validation. A reason
+or an AI review does not waive the CI or live checks required before merge.
 
 ---
 
@@ -261,6 +293,10 @@ When reporting a bug in an example, please include:
 - Steps to reproduce
 
 For new example requests, describe the use case and framework.
+
+Describe urgency and the expected scope when useful. Maintainers or triagers
+assign/create the canonical `priority:` and `size:` GitHub labels; reporters do
+not need label permissions.
 
 ---
 

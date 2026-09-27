@@ -6,14 +6,20 @@ Include a description of changes associated with your commit(s)
 - List all related issues or NA
 
 ## Example Details
-- **Language/Framework**: (e.g., Python/FastAPI, Go/GORM, Node.js/Drizzle)
+- **Python/Framework**: (e.g., Python/FastAPI, Flask, SQLAlchemy)
 - **Tested against CUBRID version**: (e.g., 11.2)
+
+## Validation
+- Commands actually executed and their results:
+- Checks not executed, reason, and remaining gaps:
+- Optional AI/tool review and findings (separate from executed tests):
 
 ## Reviewers
 - Use @Mentions to specify the reviewers for your PR.
 
 # CHECKLIST:
-Make sure all items are marked when you submit the pull-request.
+Mark applicable checks and explain anything not run/not applicable. Maintainers
+coordinate remaining required validation; a reason does not waive merge gates.
 
 - [ ] Example has been tested against a live CUBRID instance
 - [ ] All table names are prefixed with `cookbook_`
@@ -22,3 +28,9 @@ Make sure all items are marked when you submit the pull-request.
 - [ ] No hardcoded credentials — environment variables used
 - [ ] Tests updated — new/changed examples ship an `expected/` golden file or a `tests/` suite (or an allowlist entry with a reason)
 - [ ] Docs updated — README, SUPPORT_MATRIX, and CHANGELOG reflect any added, renamed, or removed example (or set `Docs: not needed - <reason>` / apply the `docs-not-needed` label; enforced by the `docs-sync` CI check)
+
+<!-- If docs are unaffected, add a standalone nonempty Docs: not needed - reason
+line outside this comment. The literal placeholder is not an exemption.
+If translation help is needed, name the language and reason. This request does
+not bypass checks; maintainers must approve the existing translations-deferred
+label and record the follow-up. -->

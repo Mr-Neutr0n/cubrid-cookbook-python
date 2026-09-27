@@ -52,7 +52,7 @@ jobs:
 
   doc-lint:
     name: Documentation lint
-    uses: cubrid-lab/.github/.github/workflows/doc-lint.yml@main
+    uses: cubrid-lab/.github/.github/workflows/doc-lint.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
     with:
       exclude: "node_modules/,typescript/node_modules/,vendor/"
       fail-on-issue: false  # advisory mode during initial rollout
@@ -62,7 +62,7 @@ jobs:
   # runs them against one live CUBRID.
   pytest-suites:
     name: Recipe pytest suites (live CUBRID)
-    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@main
+    uses: cubrid-lab/.github/.github/workflows/live-smoke.yml@f7d8c0f6c28392c10306f367de38b40f13eed4b7
     with:
       cubrid-version: "11.4"
       python-version: "3.12"

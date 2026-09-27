@@ -89,6 +89,8 @@ test-offline: ## Run mocked/offline suites in separate processes (no database re
 	$(PYTHON) -m unittest discover -s tests -p 'test_wait_for_cubrid.py' -v
 
 check-docs: ## Check documentation coverage and its doctests
+	$(PYTHON) -m doctest scripts/check_docs_reason.py -v
+	$(PYTHON) -m unittest discover -s tests -p 'test_docs_reason.py' -v
 	$(PYTHON) -m doctest scripts/check_docs_sync.py -v
 	$(PYTHON) scripts/check_docs_sync.py
 
