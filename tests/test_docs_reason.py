@@ -22,6 +22,93 @@ def workflow_python() -> str:
 
 
 class DocsReasonWorkflowTests(unittest.TestCase):
+    def test_unexpanded_placeholder_is_not_a_reason(self) -> None:
+        from scripts.check_docs_reason import has_docs_not_needed_reason
+
+        self.assertFalse(
+            has_docs_not_needed_reason("Docs: not needed - <reason> because docs are unchanged")
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "Docs: not needed - &lt;reason&gt; because docs are unchanged"
+            )
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason("Docs: not needed - only `<reason>` fixture changed")
+        )
+
+    def test_inline_literal_html_does_not_change_outer_context(self) -> None:
+        from scripts.check_docs_reason import has_docs_not_needed_reason
+
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "Example `unmatched\n~~~html\n<blockquote>\n~~~\nDocs: not needed - tests only\n`"
+            )
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason("`literal\n> quoted`\nDocs: not needed - hidden")
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason("`literal\n> quoted`\n\nDocs: not needed - tests only")
+        )
+
+        for literal in (
+            "`<blockquote>`",
+            "``<blockquote>`literal``",
+            "\u005c<blockquote>",
+            "\u005c\u005c\u005c<blockquote>",
+            "`<pre>`",
+            "`<code>`",
+            "`Example\n<blockquote>\n`",
+        ):
+            with self.subTest(literal=literal):
+                self.assertTrue(
+                    has_docs_not_needed_reason(literal + "\n\nDocs: not needed - tests only")
+                )
+        for opener in ("`<blockquote>", "``<blockquote>`", "\u005c\u005c<blockquote>"):
+            with self.subTest(opener=opener):
+                self.assertFalse(
+                    has_docs_not_needed_reason(
+                        opener + "\nDocs: not needed - hidden\n</blockquote>"
+                    )
+                )
+        self.assertFalse(has_docs_not_needed_reason("`Example\nDocs: not needed - hidden\n`"))
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "Docs: not needed - only `<blockquote>` fixture text changed"
+            )
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                '<blockquote title="`literal`">\nDocs: not needed - hidden\n</blockquote>'
+            )
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "<blockquote>\n`</blockquote>`\nDocs: not needed - tests only"
+            )
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "`<blockquote>\n\nExample\n</blockquote>\nDocs: not needed - tests only\n`"
+            )
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "\u005c`<blockquote>\nExample</blockquote>\nDocs: not needed - tests only\n`"
+            )
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "`literal`<blockquote>\nDocs: not needed - hidden\n</blockquote>"
+            )
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "``<blockquote>```\nDocs: not needed - hidden\n</blockquote>"
+            )
+        )
+
     def test_html_entities_do_not_create_physical_lines(self) -> None:
         from scripts.check_docs_reason import has_docs_not_needed_reason
 

@@ -41,5 +41,17 @@
   {"id": "indented_html_pre_is_inert", "event": {"pull_request": {"body": "    <pre>\n\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
   {"id": "tab_indented_html_code_is_inert", "event": {"pull_request": {"body": "\t<code>\n\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
   {"id": "comment_close_does_not_move_inline_marker", "event": {"pull_request": {"body": "<!--\nDocs: not needed - hidden -->Docs: not needed - inline example", "labels": []}}, "expected_docs_exemption": false},
-  {"id": "html_attribute_does_not_move_inline_marker", "event": {"pull_request": {"body": "<blockquote title=\"\nDocs: not needed - hidden\">quoted</blockquote>Docs: not needed - inline example", "labels": []}}, "expected_docs_exemption": false}
+  {"id": "html_attribute_does_not_move_inline_marker", "event": {"pull_request": {"body": "<blockquote title=\"\nDocs: not needed - hidden\">quoted</blockquote>Docs: not needed - inline example", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "inline_code_html_is_inert", "event": {"pull_request": {"body": "`<blockquote>`\n\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "inline_double_run_html_is_inert", "event": {"pull_request": {"body": "``<blockquote>`literal``\n\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "escaped_html_is_inert", "event": {"pull_request": {"body": "\\<blockquote>\n\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "even_backslash_keeps_real_html", "event": {"pull_request": {"body": "\\\\<blockquote>\nDocs: not needed - hidden\n</blockquote>", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "unmatched_tick_keeps_real_html", "event": {"pull_request": {"body": "`<blockquote>\n\nDocs: not needed - hidden\n</blockquote>", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "multiline_inline_code_marker_hidden", "event": {"pull_request": {"body": "`Example\nDocs: not needed - hidden\n`", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "multiline_inline_code_html_then_real_reason", "event": {"pull_request": {"body": "`Example\n<blockquote>\n`\n\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "inline_run_cannot_cross_fenced_block", "event": {"pull_request": {"body": "Example `unmatched\n~~~html\n<blockquote>\n~~~\nDocs: not needed - tests only\n`", "labels": []}}, "expected_docs_exemption": true},
+  {"id": "inline_run_cannot_cross_quote_block", "event": {"pull_request": {"body": "`literal\n> quoted`\nDocs: not needed - hidden", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "embedded_unexpanded_placeholder", "event": {"pull_request": {"body": "Docs: not needed - <reason> because docs are unchanged", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "encoded_leading_placeholder_suffix", "event": {"pull_request": {"body": "Docs: not needed - &lt;reason&gt; because docs are unchanged", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "placeholder_fixture_mention", "event": {"pull_request": {"body": "Docs: not needed - only `<reason>` fixture changed", "labels": []}}, "expected_docs_exemption": true}
 ]

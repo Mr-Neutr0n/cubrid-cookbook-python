@@ -21,14 +21,19 @@ from html import unescape
 from html.parser import HTMLParser
 
 _PREFIX = "Docs: not needed -"
+_LITERAL_RUN = re.compile(r"`+|\\+")
 
 
 class _HTMLContext(HTMLParser):
-    def __init__(self) -> None:
+    def __init__(self, source: str) -> None:
         super().__init__(convert_charrefs=False)
         self.blocked: list[str] = []
         self.lines: dict[int, str] = {}
         self.marker_lines: set[int] = set()
+        self.literal_positions: set[tuple[int, int]] = set()
+        self.source = source
+        self.inline_end = -1
+        self.inline_spans: list[tuple[int, int]] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         if tag in {"blockquote", "pre", "code"}:
@@ -52,6 +57,9 @@ class _HTMLContext(HTMLParser):
                 origin = column if offset == 0 else 0
                 if origin + indentation <= 3 and text.lstrip(" ").startswith(_PREFIX):
                     self.marker_lines.add(number)
+                for index, character in enumerate(text):
+                    if character in "`\\":
+                        self.literal_positions.add((number, origin + index))
 
     def handle_entityref(self, name: str) -> None:
         self.handle_data(unescape(f"&{name};").replace("\r", " ").replace("\n", " "))
@@ -63,17 +71,68 @@ class _HTMLContext(HTMLParser):
         self.feed(prefix)
         return not self.blocked and self.lines.get(number) == prefix
 
+    def feed_literals(self, text: str, number: int, column: int, offset: int) -> None:
+        cursor = 0
+        while cursor < len(text):
+            if offset + cursor < self.inline_end:
+                end = min(len(text), self.inline_end - offset)
+                self.feed(text[cursor:end].replace("<", " ").replace("&", " "))
+                cursor = end
+                continue
+            run = _LITERAL_RUN.search(text, cursor)
+            if run is None:
+                self.feed(text[cursor:])
+                break
+            self.feed(text[cursor : run.end()])
+            outside = not self.blocked and (number, column + run.start()) in self.literal_positions
+            cursor = run.end()
+            if not outside:
+                continue
+            if run[0][0] == "\\":
+                if len(run[0]) % 2 and cursor < len(text) and text[cursor] in "<`":
+                    self.feed(" " if text[cursor] == "<" else "`")
+                    cursor += 1
+                continue
+            start = offset + cursor
+            paragraph = re.search(r"\n[ \t]*\n", self.source[start:])
+            limit = start + paragraph.start() if paragraph else len(self.source)
+            quote_boundary = re.search(r"\n {0,3}>", self.source[start:limit])
+            if quote_boundary:
+                limit = start + quote_boundary.start() + 1
+            for boundary in re.finditer(r"\n {0,3}(`{3,}|~{3,})([^\n]*)", self.source[start:limit]):
+                if boundary[1][0] == "~" or "`" not in boundary[2]:
+                    limit = start + boundary.start() + 1
+                    break
+            closing = next(
+                (
+                    match
+                    for match in re.finditer(r"`+", self.source[start:limit])
+                    if len(match[0]) == len(run[0])
+                ),
+                None,
+            )
+            if closing is not None:
+                self.inline_end = start + closing.end()
+                self.inline_spans.append((offset + run.start(), self.inline_end))
+
 
 def has_docs_not_needed_reason(body: str | None) -> bool:
     prefix = _PREFIX
-    html = _HTMLContext()
+    raw_lines = (body or "").splitlines()
+    html = _HTMLContext("\n".join(raw_lines))
     candidates = []
     fence = None
     quoted = False
-    for number, raw in enumerate((body or "").splitlines(), 1):
+    offset = 0
+    for number, raw in enumerate(raw_lines, 1):
+        origin = offset
+        offset += len(raw) + 1
         line = raw.rstrip()
         stripped = line.lstrip()
         marker = re.match(r" {0,3}(`{3,}|~{3,})", line)
+        if origin < html.inline_end:
+            html.feed_literals(line + "\n", number, 0, origin)
+            continue
         if fence:
             if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1]:
                 if not line[marker.end() :].strip():
@@ -91,27 +150,39 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             if html.outside_prefix(number, line[: indentation.end()]):
                 html.feed("\n")
                 continue
-            html.feed(line[indentation.end() :] + "\n")
+            html.feed_literals(
+                line[indentation.end() :] + "\n",
+                number,
+                indentation.end(),
+                origin + indentation.end(),
+            )
         elif quote:
             if html.outside_prefix(number, line[: quote.end()]):
                 quoted = True
                 html.feed("\n")
                 continue
-            html.feed(line[quote.end() :] + "\n")
+            html.feed_literals(
+                line[quote.end() :] + "\n", number, quote.end(), origin + quote.end()
+            )
         elif marker and (marker[1][0] == "~" or "`" not in line[marker.end() :]):
             if html.outside_prefix(number, line[: marker.end()]):
                 fence = (marker[1][0], len(marker[1]))
                 html.feed("\n")
                 continue
-            html.feed(line[marker.end() :] + "\n")
+            html.feed_literals(
+                line[marker.end() :] + "\n", number, marker.end(), origin + marker.end()
+            )
         else:
-            html.feed(line + "\n")
+            html.feed_literals(line + "\n", number, 0, origin)
         if re.match(r" {0,3}" + re.escape(prefix), line):
-            candidates.append(number)
-    for number in candidates:
+            position = origin + len(line) - len(line.lstrip(" "))
+            if not line.lstrip(" ")[len(prefix) :].lstrip().startswith("<reason>"):
+                candidates.append((number, position))
+    for number, position in candidates:
         line = html.lines.get(number, "").lstrip(" ")
-        if number in html.marker_lines and line.startswith(prefix):
+        inside = any(start <= position < end for start, end in html.inline_spans)
+        if not inside and number in html.marker_lines and line.startswith(prefix):
             reason = line[len(prefix) :].strip()
-            if reason and reason != "<reason>":
+            if reason and not reason.startswith("<reason>"):
                 return True
     return False
