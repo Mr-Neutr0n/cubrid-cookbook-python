@@ -31,7 +31,8 @@ jobs:
     steps:
       - name: Report trigger
         # Request fields are read and validated from GITHUB_EVENT_PATH by Python.
-        run: printf 'Event: %s\n' "$GITHUB_EVENT_NAME"
+        run: |
+          printf 'Event: %s\n' "$GITHUB_EVENT_NAME"
 
       - name: Checkout
         uses: actions/checkout@v4
