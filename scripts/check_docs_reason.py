@@ -86,6 +86,11 @@ class _HTMLContext(HTMLParser):
             closer = pending.rfind("-->")
             tail = pending[closer + 3 :]
             safe = closer > pending.rfind("<!--") and "<" not in tail and "&" not in tail
+        elif pending.startswith("&#"):
+            numeric = re.match(r"&#(?:[xX][0-9a-fA-F]*|[0-9]*)\n", pending)
+            if numeric:
+                tail = pending[numeric.end() :]
+                safe = "<" not in tail and "&" not in tail
         if pending and safe:
             self.close()
 
