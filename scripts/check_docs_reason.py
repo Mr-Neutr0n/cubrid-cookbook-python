@@ -26,17 +26,18 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
     for raw in (body or "").splitlines():
         line = raw.rstrip()
         stripped = line.lstrip()
-        marker = re.match(r"(`{3,}|~{3,})", stripped)
+        marker = re.match(r" {0,3}(`{3,}|~{3,})", line)
         if fence:
-            if marker and marker[0][0] == fence[0] and len(marker[0]) >= fence[1]:
-                if not stripped[len(marker[0]) :].strip():
+            if marker and marker[1][0] == fence[0] and len(marker[1]) >= fence[1]:
+                if not line[marker.end() :].strip():
                     fence = None
             continue
         if comment:
-            comment = "-->" not in line
+            if "-->" in line:
+                comment = line.rfind("<!--") > line.rfind("-->")
             continue
         if marker:
-            fence = (marker[0][0], len(marker[0]))
+            fence = (marker[1][0], len(marker[1]))
             continue
         if not stripped:
             quoted = False
@@ -45,7 +46,7 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             quoted = True
             continue
         if "<!--" in line:
-            comment = "-->" not in line.rsplit("<!--", 1)[1]
+            comment = line.rfind("<!--") > line.rfind("-->")
         if not quoted and line.startswith(prefix):
             reason = re.sub(r"<!--.*?(?:-->|$)", "", line[len(prefix) :]).strip()
             if reason and reason != "<reason>":

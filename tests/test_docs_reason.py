@@ -22,6 +22,42 @@ def workflow_python() -> str:
 
 
 class DocsReasonWorkflowTests(unittest.TestCase):
+    def test_comment_reopening_and_fence_indentation(self) -> None:
+        from scripts.check_docs_reason import has_docs_not_needed_reason
+
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "<!-- first\n--> <!-- second\nDocs: not needed - hidden example\n-->"
+            )
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "<!-- first\n--> <!-- second -->\nDocs: not needed - tests only"
+            )
+        )
+        for indentation in ("", " ", "  ", "   "):
+            with self.subTest(indentation=indentation):
+                self.assertFalse(
+                    has_docs_not_needed_reason(
+                        indentation + "```text\nDocs: not needed - hidden example\n```"
+                    )
+                )
+                self.assertTrue(
+                    has_docs_not_needed_reason(
+                        "```text\n" + indentation + "```\nDocs: not needed - tests only"
+                    )
+                )
+        for indentation in ("    ", "     ", "\t"):
+            with self.subTest(indentation=indentation):
+                self.assertTrue(
+                    has_docs_not_needed_reason(indentation + "```\nDocs: not needed - tests only")
+                )
+                self.assertFalse(
+                    has_docs_not_needed_reason(
+                        "```text\n" + indentation + "```\nDocs: not needed - hidden example\n```"
+                    )
+                )
+
     def test_mixed_fences_and_visible_reason(self) -> None:
         from scripts.check_docs_reason import has_docs_not_needed_reason
 
