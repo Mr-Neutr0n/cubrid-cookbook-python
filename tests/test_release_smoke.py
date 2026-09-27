@@ -59,6 +59,25 @@ class ReleaseSmokeTests(unittest.TestCase):
             release_smoke.freeze(self.state, self.constraints)
         self.assertFalse(self.constraints.exists())
 
+    def test_same_version_local_replacement_fails(self) -> None:
+        release_smoke.freeze(self.state, self.constraints)
+        self.direct_url = '{"url": "file:///tmp/local-driver", "dir_info": {}}'
+        with self.assertRaisesRegex(ValueError, "not a direct URL"):
+            release_smoke.verify(self.state)
+
+    def test_missing_constraints_fail_before_example_install(self) -> None:
+        with patch.object(release_smoke.subprocess, "check_call") as install:
+            with self.assertRaisesRegex(ValueError, "Missing release constraints"):
+                release_smoke.install_examples(self.root, self.constraints)
+        install.assert_not_called()
+
+    def test_examples_without_requirements_need_no_install(self) -> None:
+        release_smoke.freeze(self.state, self.constraints)
+        (self.root / "no-extra-dependencies" / "expected").mkdir(parents=True)
+        with patch.object(release_smoke.subprocess, "check_call") as install:
+            release_smoke.install_examples(self.root, self.constraints)
+        install.assert_not_called()
+
     def test_every_example_install_uses_release_constraints(self) -> None:
         release_smoke.freeze(self.state, self.constraints)
         for directory in ("first", "nested/second", ".hidden/example"):
@@ -109,12 +128,17 @@ class ReleaseSmokeTests(unittest.TestCase):
         freeze = workflow.index("name: Freeze selected driver releases")
         dependencies = workflow.index("name: Install per-example dependencies")
         suites = workflow.index("name: Install pytest suite dependencies")
+        ai_dependencies = workflow.index("name: Install AI agent test dependencies")
+        ai_tests = workflow.index("name: Test AI agent examples against live CUBRID")
         report = workflow.index("name: Record tested versions")
         verify = workflow.index("name: Run make verify")
         self.assertLess(freeze, dependencies)
         self.assertLess(dependencies, report)
         self.assertLess(suites, report)
-        self.assertLess(report, verify)
+        self.assertLess(freeze, ai_dependencies)
+        self.assertLess(ai_dependencies, report)
+        self.assertLess(report, ai_tests)
+        self.assertLess(ai_tests, verify)
         self.assertIn("PIP_CONSTRAINT=$RUNNER_TEMP/release-constraints.txt", workflow)
         self.assertIn('install-examples --constraints "$PIP_CONSTRAINT"', workflow)
         self.assertIn("set -o pipefail", workflow[report:verify])

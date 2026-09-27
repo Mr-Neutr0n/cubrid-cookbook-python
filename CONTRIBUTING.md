@@ -96,11 +96,12 @@ reason — but prefer making the example deterministic and adding a golden.
 The smoke job selects `pycubrid` and `sqlalchemy-cubrid` from the package index,
 then freezes their exact installed versions with `scripts/release_smoke.py`.
 Every subsequent dependency install uses these constraints, including example
-requirements, framework test dependencies, and the MCP server. An incompatible
+requirements, AI-agent and framework test dependencies, and the MCP server. An incompatible
 requirement fails the job instead of replacing a selected driver.
 
 After all installs, the job checks the driver versions and package-index origin
 before recording **Tested upstream versions** and running examples or suites.
+The AI-agent suite runs twice only after this final verification, on PRs too.
 A same-version VCS or local install is also rejected. Golden-backed requirements
 must use published driver releases; the `pycubrid`, `connect`, and `orm-basics`
 fundamentals require the current `>=1.7,<2` release line. The MCP server's

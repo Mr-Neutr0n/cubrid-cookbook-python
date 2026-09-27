@@ -241,18 +241,9 @@ jobs:
           sys.exit(1)
           PY
 
-      - name: Test AI agent examples against live CUBRID
-        timeout-minutes: 5
-        env:
-          CUBRID_TEST_URL: cubrid+pycubrid://dba@localhost:33000/testdb
-        run: |
-          # Dependencies already installed above; do not replace released drivers.
-          pip install pytest
-          python -m pytest tests/test_ai_agent_offline.py -q
-          # Each example has dedicated table cleanup. Repeat to catch stale
-          # fixed demonstration keys and incomplete teardown on the same server.
-          python -m pytest tests/test_ai_agent.py -v --tb=short
-          python -m pytest tests/test_ai_agent.py -v --tb=short
+      - name: Install AI agent test dependencies
+        # PIP_CONSTRAINT preserves the selected released drivers on PRs too.
+        run: pip install pytest
 
       - name: Install per-example dependencies
         # Golden-verified examples may declare their own requirements.txt (e.g.
@@ -279,6 +270,18 @@ jobs:
           python scripts/release_smoke.py verify \
             --state "$RUNNER_TEMP/release-drivers.json" --report \
             | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Test AI agent examples against live CUBRID
+        timeout-minutes: 5
+        env:
+          CUBRID_TEST_URL: cubrid+pycubrid://dba@localhost:33000/testdb
+        run: |
+          # Every dependency is installed and final driver provenance verified.
+          python -m pytest tests/test_ai_agent_offline.py -q
+          # Each example has dedicated table cleanup. Repeat to catch stale
+          # fixed demonstration keys and incomplete teardown on the same server.
+          python -m pytest tests/test_ai_agent.py -v --tb=short
+          python -m pytest tests/test_ai_agent.py -v --tb=short
 
       - name: Run make verify
         run: make verify VERIFY_PATHS="${VERIFY_PATHS:-.}"
