@@ -9,13 +9,15 @@ user profiles, and message analytics in CUBRID. Demonstrates:
 
 from __future__ import annotations
 
+import os
 from datetime import datetime
 
 import sqlalchemy as sa
 from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, JSON
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, Session, relationship
 
-DATABASE_URL = "cubrid+pycubrid://dba@localhost:33000/testdb"
+# Same DATABASE_URL convention as the dashboard recipes (templates/dashboard/*.py).
+DATABASE_URL = os.environ.get("DATABASE_URL", "cubrid+pycubrid://dba@localhost:33000/testdb")
 
 
 class Base(DeclarativeBase):
@@ -72,71 +74,73 @@ def simulate_llm_response(user_message: str) -> str:
 
 def main() -> None:
     engine = sa.create_engine(DATABASE_URL, echo=False)
-    Base.metadata.create_all(engine)
+    try:
+        Base.metadata.create_all(engine)
 
-    with Session(engine) as session:
-        # Create a user with AI preferences stored as JSON
-        user = ChatUser(
-            username="alice",
-            display_name="Alice Kim",
-            preferences={"model": "gpt-4", "temperature": 0.7, "max_tokens": 2000},
-        )
-        session.add(user)
-        session.flush()
-        print(f"User created: {user.id} ({user.username})")
-
-        # Create a conversation
-        conv = ChatConversation(user_id=user.id, title="CUBRID + AI Demo")
-        session.add(conv)
-        session.flush()
-        print(f"Conversation: {conv.id}")
-
-        # Simulate a chat exchange
-        exchanges = [
-            ("user", "Hello! Can you help me analyze my data?"),
-            ("assistant", "Of course! I'd be happy to help you analyze your CUBRID data."),
-            ("user", "What tables do I have?"),
-            ("assistant", "You have tables for users, products, and orders."),
-        ]
-
-        for role, content in exchanges:
-            msg = ChatMessage(
-                conversation_id=conv.id,
-                role=role,
-                content=content,
-                metadata_={"turn": len(conv.messages), "source": "demo"},
-                token_count=len(content.split()),
+        with Session(engine) as session:
+            # Create a user with AI preferences stored as JSON
+            user = ChatUser(
+                username="alice",
+                display_name="Alice Kim",
+                preferences={"model": "gpt-4", "temperature": 0.7, "max_tokens": 2000},
             )
-            session.add(msg)
+            session.add(user)
+            session.flush()
+            print(f"User created: {user.id} ({user.username})")
 
-        session.commit()
+            # Create a conversation
+            conv = ChatConversation(user_id=user.id, title="CUBRID + AI Demo")
+            session.add(conv)
+            session.flush()
+            print(f"Conversation: {conv.id}")
 
-        # Query conversation history with JSON metadata
-        msgs = (
-            session.execute(
-                sa.select(ChatMessage)
-                .where(ChatMessage.conversation_id == conv.id)
-                .order_by(ChatMessage.id)
+            # Simulate a chat exchange
+            exchanges = [
+                ("user", "Hello! Can you help me analyze my data?"),
+                ("assistant", "Of course! I'd be happy to help you analyze your CUBRID data."),
+                ("user", "What tables do I have?"),
+                ("assistant", "You have tables for users, products, and orders."),
+            ]
+
+            for role, content in exchanges:
+                msg = ChatMessage(
+                    conversation_id=conv.id,
+                    role=role,
+                    content=content,
+                    metadata_={"turn": len(conv.messages), "source": "demo"},
+                    token_count=len(content.split()),
+                )
+                session.add(msg)
+
+            session.commit()
+
+            # Query conversation history with JSON metadata
+            msgs = (
+                session.execute(
+                    sa.select(ChatMessage)
+                    .where(ChatMessage.conversation_id == conv.id)
+                    .order_by(ChatMessage.id)
+                )
+                .scalars()
+                .all()
             )
-            .scalars()
-            .all()
-        )
 
-        print(f"\nConversation transcript ({len(msgs)} messages):")
-        for m in msgs:
-            print(f"  [{m.role}] {m.content[:60]} (tokens: {m.token_count})")
+            print(f"\nConversation transcript ({len(msgs)} messages):")
+            for m in msgs:
+                print(f"  [{m.role}] {m.content[:60]} (tokens: {m.token_count})")
 
-        # Verify JSON metadata round-trip
-        assert msgs[0].metadata_["turn"] == 0
-        assert msgs[0].metadata_["source"] == "demo"
-        print("\n  JSON metadata round-trip: ✓")
+            # Verify JSON metadata round-trip
+            assert msgs[0].metadata_["turn"] == 0
+            assert msgs[0].metadata_["source"] == "demo"
+            print("\n  JSON metadata round-trip: ✓")
 
-        # User preferences (JSON column)
-        print(f"  User preferences: {user.preferences}")
-        assert user.preferences["model"] == "gpt-4"
+            # User preferences (JSON column)
+            print(f"  User preferences: {user.preferences}")
+            assert user.preferences["model"] == "gpt-4"
 
-    engine.dispose()
-    print("\n✓ AI chatbot backend working")
+        print("\n✓ AI chatbot backend working")
+    finally:
+        engine.dispose()
 
 
 if __name__ == "__main__":

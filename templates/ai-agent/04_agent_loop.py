@@ -10,14 +10,17 @@ Demonstrates how CUBRID serves as the backbone for an agentic workflow:
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import time
+from pathlib import Path
 
 import pycubrid
 
 # Reuse the schema from 01_agent_state.py
 from importlib.util import spec_from_file_location, module_from_spec
 
-_spec = spec_from_file_location("agent_state", "templates/ai-agent/01_agent_state.py")
+_spec = spec_from_file_location("agent_state", Path(__file__).with_name("01_agent_state.py"))
 _agent_state = module_from_spec(_spec)
 _spec.loader.exec_module(_agent_state)
 
@@ -46,7 +49,9 @@ class SimpleDataAgent:
         elif "product" in user_query.lower() or "price" in user_query.lower():
             plan = "query → format → answer"
             tool = "execute_query"
-            args = {"sql": "SELECT name, price FROM products ORDER BY price DESC LIMIT 5"}
+            args = {
+                "sql": "SELECT item_name, price FROM cookbook_agent_products ORDER BY price DESC LIMIT 5"
+            }
         else:
             plan = "health_check → answer"
             tool = "health_check"
@@ -115,49 +120,59 @@ class SimpleDataAgent:
 
 
 def main() -> None:
-    conn = pycubrid.connect(database="testdb")
-    _agent_state.setup_schema(conn)
+    # Reuses 01_agent_state's CUBRID_* env-var config, imported above.
+    with closing(pycubrid.connect(**_agent_state.DB_CONFIG)) as conn:
+        _agent_state.setup_schema(conn)
+        with conn.cursor() as cursor:
+            cursor.execute(
+                "CREATE TABLE IF NOT EXISTS cookbook_agent_products "
+                "(id INT PRIMARY KEY, item_name VARCHAR(50), price NUMERIC(10, 2))"
+            )
+            cursor.executemany(
+                "REPLACE INTO cookbook_agent_products (id, item_name, price) VALUES (?, ?, ?)",
+                [(1, "Notebook", 12.50), (2, "Pen", 2.00), (3, "Keyboard", 45.00)],
+            )
+        conn.commit()
 
-    agent = SimpleDataAgent(conn, "agent-loop-demo")
+        agent = SimpleDataAgent(conn, "agent-loop-demo")
 
-    # Agent loop: multiple queries
-    print("Agent loop demo")
-    print("=" * 50)
+        # Agent loop: multiple queries
+        print("Agent loop demo")
+        print("=" * 50)
 
-    queries = [
-        "What tables are in this database?",
-        "Show me the top products by price",
-        "How are you doing?",
-    ]
+        queries = [
+            "What tables are in this database?",
+            "Show me the top products by price",
+            "How are you doing?",
+        ]
 
-    for query in queries:
-        print(f"\n[User] {query}")
-        response = agent.run(query)
-        print(f"[Agent] {response}")
+        for query in queries:
+            print(f"\n[User] {query}")
+            response = agent.run(query)
+            print(f"[Agent] {response}")
 
-    # Show full conversation transcript
-    transcript = agent.get_transcript()
-    print(f"\n{'=' * 50}")
-    print(f"Full transcript ({len(transcript)} messages):")
-    for msg in transcript:
-        meta = f" ({msg['metadata']})" if msg["metadata"] else ""
-        print(f"  [{msg['role']}]{meta} {msg['content'][:70]}")
+        # Show full conversation transcript
+        transcript = agent.get_transcript()
+        print(f"\n{'=' * 50}")
+        print(f"Full transcript ({len(transcript)} messages):")
+        for msg in transcript:
+            meta = f" ({msg['metadata']})" if msg["metadata"] else ""
+            print(f"  [{msg['role']}]{meta} {msg['content'][:70]}")
 
-    # Show tool call history with timing
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT tool_name, status, duration_ms FROM agent_tool_calls "
-        "WHERE session_id = ? ORDER BY id",
-        [agent.session_id],
-    )
-    calls = cur.fetchall()
-    print(f"\nTool calls ({len(calls)}):")
-    for name, status, duration in calls:
-        print(f"  {name}: {status} ({duration}ms)")
+        # Show tool call history with timing
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT tool_name, status, duration_ms FROM agent_tool_calls "
+            "WHERE session_id = ? ORDER BY id",
+            [agent.session_id],
+        )
+        calls = cur.fetchall()
+        print(f"\nTool calls ({len(calls)}):")
+        for name, status, duration in calls:
+            print(f"  {name}: {status} ({duration}ms)")
 
-    cur.close()
-    conn.close()
-    print("\n✓ Agent loop working")
+        cur.close()
+        print("\n✓ Agent loop working")
 
 
 if __name__ == "__main__":
