@@ -27,7 +27,7 @@ coordinate remaining required validation; a reason does not waive merge gates.
 - [ ] Python code passes `ruff check` and `ruff format --check`
 - [ ] No hardcoded credentials — environment variables used
 - [ ] Tests updated — new/changed examples ship an `expected/` golden file or a `tests/` suite (or an allowlist entry with a reason)
-- [ ] Docs updated — README, SUPPORT_MATRIX, and CHANGELOG reflect any added, renamed, or removed example (or set `Docs: not needed - <reason>` / apply the `docs-not-needed` label; enforced by the `docs-sync` CI check)
+- [ ] Docs updated — README, SUPPORT_MATRIX, and CHANGELOG reflect any added, renamed, or removed example (or give a real standalone `Docs: not needed - <reason>` line / request the maintainer-managed `docs-not-needed` label; enforced by the `docs-sync` CI check)
 
 <!-- If docs are unaffected, add a standalone nonempty Docs: not needed - reason
 line outside this comment. The literal placeholder is not an exemption.

@@ -100,9 +100,11 @@ jobs:
           if relevant and not doc_changed and not skipped:
               print("\nDocs-sync guard failed.")
               print("Example/behavior-relevant files changed without a matching docs update.")
-              print("Either update docs (SUPPORT_MATRIX / CHANGELOG / README), or add the")
-              print("`docs-not-needed` label / PR body marker:")
-              print("  Docs: not needed - <reason>")
+              print("Update docs (SUPPORT_MATRIX / CHANGELOG / README), or if unaffected")
+              print("add a standalone reason line, for example:")
+              print("  Docs: not needed - only regression test data changed")
+              print("Replace the example explanation with your actual reason.")
+              print("Alternatively request the maintainer-managed `docs-not-needed` label.")
               print("\nRelevant files:")
               for p in relevant:
                   print(f"  {p}")
