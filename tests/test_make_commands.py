@@ -139,5 +139,21 @@ class VerifyCommandTests(unittest.TestCase):
         self.assertIn("1 passed, 0 failed, 0 skipped", result.stdout)
 
 
+class OfflineWorkflowTests(unittest.TestCase):
+    def test_ci_runs_the_contributor_aggregate(self) -> None:
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+        self.assertIn("run: make check", workflow)
+
+    def test_required_smoke_runs_command_guards_before_dependency_selection(self) -> None:
+        workflow = (ROOT / ".github/workflows/smoke-test.yml").read_text(encoding="utf-8")
+        release = workflow.index("name: Check release smoke guards (offline)")
+        guards = workflow.index("name: Check Make and readiness guards (offline)")
+        selection = workflow.index("name: Cache pip downloads")
+        self.assertLess(release, guards)
+        self.assertLess(guards, selection)
+        for name in ("test_make_commands.py", "test_wait_for_cubrid.py"):
+            self.assertIn(name, workflow[guards:selection])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -57,6 +57,8 @@ Make/Compose regression tests. `make test-offline` runs just the offline test
 suites. Each suite uses its own process to avoid conflicting recipe module names.
 These checks require no database and do not prove live CUBRID compatibility;
 run the relevant example or `make verify` against CUBRID for that evidence.
+CI runs the same `make check` command. Both required live smoke matrix jobs also
+run the Make/readiness regression guards before selecting driver dependencies.
 The repository is an example collection, so `pip install -e .` is not supported.
 
 ---
