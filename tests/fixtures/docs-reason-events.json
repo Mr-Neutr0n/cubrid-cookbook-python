@@ -99,5 +99,6 @@
   {"id": "nested_supported_placeholder_is_not_reason", "event": {"pull_request": {"body": "Docs: not needed - (**<reason>**)", "labels": []}}, "expected_docs_exemption": false},
   {"id": "type6_div_ends_lazy_quote", "event": {"pull_request": {"body": "> prior quote\n<div>\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
   {"id": "lazy_bullet_underline_not_setext", "event": {"pull_request": {"body": "- item\n  `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false},
-  {"id": "lazy_ordered_underline_not_setext", "event": {"pull_request": {"body": "1. item\n   `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false}
+  {"id": "lazy_ordered_underline_not_setext", "event": {"pull_request": {"body": "1. item\n   `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "wide_ordered_list_inline_context_preserved", "event": {"pull_request": {"body": "10. item\n    `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `", "labels": []}}, "expected_docs_exemption": false}
 ]

@@ -249,6 +249,29 @@ class DocsReasonWorkflowTests(unittest.TestCase):
                     f"{item}\n{indent}`unmatched\n{indent}Heading\n{indent}===\nDocs: not needed - tests only\nlast `"
                 )
             )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "10. item\n    `unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `"
+            )
+        )
+        for number in (100, 999999999):
+            indent = " " * (len(str(number)) + 2)
+            self.assertFalse(
+                has_docs_not_needed_reason(
+                    f"{number}. item\n{indent}continued\n{indent}`unmatched\nHeading\n===\nDocs: not needed - hidden\nlast `"
+                )
+            )
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    f"{number}. item\n{indent}`unmatched\n{indent}Heading\n{indent}===\nDocs: not needed - tests only\nlast `"
+                )
+            )
+        for source in (
+            "    <blockquote>\nDocs: not needed - tests only",
+            "10. item\n        <blockquote>\nDocs: not needed - tests only",
+            "<!--\n10. fake item\n-->\n    <blockquote>\nDocs: not needed - tests only",
+        ):
+            self.assertTrue(has_docs_not_needed_reason(source))
         for heading in ("> ####### invalid", "> #no-space", "\\> # escaped"):
             self.assertFalse(
                 has_docs_not_needed_reason(f"> paragraph\n{heading}\nDocs: not needed - hidden")

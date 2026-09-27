@@ -109,6 +109,7 @@ class _HTMLContext(HTMLParser):
         self.marker_lines: set[int] = set()
         self.literal_positions: set[tuple[int, int]] = set()
         self.source = source
+        self.paragraph_base = 0
         self.fed_text = ""
         self.row_starts: list[int] = [0]
         self.inline_end = -1
@@ -174,23 +175,6 @@ class _HTMLContext(HTMLParser):
         self.checkpoint()
         return not self.blocked and self.lines.get(number) == prefix
 
-    def list_base(self, opener: int) -> int:
-        end = self.source.find("\n", opener)
-        if end == -1:
-            end = len(self.source)
-        start = self.source.rfind("\n", 0, opener) + 1
-        while True:
-            line = self.source[start:end]
-            prefix = re.match(_LIST_PREFIX, line)
-            if prefix:
-                if _paragraph_line(line[prefix.end() :]):
-                    return len(line[: prefix.end()].expandtabs(4))
-                return 0
-            if not _paragraph_line(line) or start == 0:
-                return 0
-            end = start - 1
-            start = self.source.rfind("\n", 0, end) + 1
-
     def feed_literals(self, text: str, number: int, column: int, offset: int) -> None:
         cursor = 0
         while cursor < len(text):
@@ -240,7 +224,7 @@ class _HTMLContext(HTMLParser):
             thematic = re.search(r"\n" + _THEMATIC_BREAK + r"(?=\n|$)", self.source[start:limit])
             if thematic:
                 limit = start + thematic.start() + 1
-            base = self.list_base(offset + run.start())
+            base = self.paragraph_base
             for setext in re.finditer(
                 r"\n([ \t]*)(?:=+|-+)[ \t]*(?=\n|$)", self.source[start:limit]
             ):
@@ -291,11 +275,22 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
         if origin < html.inline_end:
             html.feed_literals(line + "\n", number, 0, origin)
             continue
+        if html.paragraph_base:
+            expanded = line.expandtabs(4)
+            leading_width = len(expanded) - len(expanded.lstrip(" "))
+            content = (
+                expanded[html.paragraph_base :]
+                if leading_width >= html.paragraph_base
+                else expanded
+            )
+            if not _paragraph_line(content):
+                html.paragraph_base = 0
         if fence and fence[2] > 0 and raw.strip(" \t"):
             leading = raw[: len(raw) - len(raw.lstrip(" \t"))]
             if len(leading.expandtabs(4)) < fence[2]:
                 fence = None
         if fence:
+            html.paragraph_base = 0
             marker = re.match(r"[ \t]*(`{3,}|~{3,})", line)
             fence_indent = len(line[: marker.start(1)].expandtabs(4)) if marker else -1
             if (
@@ -323,20 +318,27 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             quoted = False
         quote = re.match(_BLOCK_PREFIX + ">", line)
         if quoted and not quote:
+            html.paragraph_base = 0
             html.feed("\n")
             continue
         indentation = re.match(r"(?: {4,}| {0,3}\t)", line)
         if indentation:
-            if html.outside_prefix(number, line[: indentation.end()]):
+            leading = line[: len(line) - len(line.lstrip(" \t"))]
+            relative = len(leading.expandtabs(4)) - html.paragraph_base
+            if html.paragraph_base and 0 <= relative <= 3:
+                html.feed_literals(line + "\n", number, 0, origin)
+            elif html.outside_prefix(number, line[: indentation.end()]):
                 html.feed("\n")
                 continue
-            html.feed_literals(
-                line[indentation.end() :] + "\n",
-                number,
-                indentation.end(),
-                origin + indentation.end(),
-            )
+            else:
+                html.feed_literals(
+                    line[indentation.end() :] + "\n",
+                    number,
+                    indentation.end(),
+                    origin + indentation.end(),
+                )
         elif quote:
+            html.paragraph_base = 0
             if html.outside_prefix(number, line[: quote.end()]):
                 content = line[quote.end() :]
                 if content.startswith(" "):
@@ -348,6 +350,7 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
                 line[quote.end() :] + "\n", number, quote.end(), origin + quote.end()
             )
         elif opener and (opener[1][0] == "~" or "`" not in line[opener.end() :]):
+            html.paragraph_base = 0
             if html.outside_prefix(number, line[: opener.end()]):
                 list_item = re.match(_LIST_PREFIX, line)
                 base = len(line[: opener.start(1)].expandtabs(4)) if list_item else 0
@@ -358,7 +361,22 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
                 line[opener.end() :] + "\n", number, opener.end(), origin + opener.end()
             )
         else:
-            html.feed_literals(line + "\n", number, 0, origin)
+            list_item = re.match(_LIST_PREFIX, line)
+            if list_item:
+                visible = html.outside_prefix(number, line[: list_item.end()])
+                html.paragraph_base = (
+                    len(line[: list_item.end()].expandtabs(4))
+                    if visible and _paragraph_line(line[list_item.end() :])
+                    else 0
+                )
+                html.feed_literals(
+                    line[list_item.end() :] + "\n",
+                    number,
+                    list_item.end(),
+                    origin + list_item.end(),
+                )
+            else:
+                html.feed_literals(line + "\n", number, 0, origin)
         if re.match(r" {0,3}" + re.escape(prefix), line):
             html.checkpoint()
             position = origin + len(line) - len(line.lstrip(" "))

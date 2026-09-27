@@ -24,7 +24,8 @@ fundamentals/      → Step-by-step reference for core operations
 
 - This is a **Python-only** repository. No Node.js, Go, Rust, or TypeScript content.
 - Treat examples as user-facing reference implementations, not throwaway demos.
-- All content must be written in **English**.
+- Example content must be written in **English**.
+- Use English for GitHub issues, pull requests, and comments; localized documentation is welcome, and no specific tool is required.
 - Use `cookbook_` table prefix in all SQL examples.
 - Avoid CUBRID reserved words in column names: `value` → `val`, `count` → `cnt`, `data` → `file_data`.
 - Use `from __future__ import annotations` in all Python files.

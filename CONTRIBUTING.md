@@ -3,6 +3,9 @@
 Thank you for your interest in contributing! This document provides guidelines
 and instructions for contributing to the project.
 
+Use English for GitHub issues, pull requests, and comments; localized documentation
+is welcome, and no specific tool is required.
+
 ## Table of Contents
 
 - [Development Workflow](#development-workflow)
