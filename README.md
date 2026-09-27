@@ -199,6 +199,18 @@ For the ecosystem-wide view, see the [CUBRID Labs Ecosystem Roadmap](https://git
 
 PRs welcome! Each example should be self-contained and independently runnable. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
+### First contribution
+
+New to CUBRID? Pick the repository that matches what you want to work on:
+
+- Documentation and runnable examples: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
+- Pure-Python driver fixes: [pycubrid](https://github.com/cubrid-lab/pycubrid)
+- SQLAlchemy dialect fixes: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+
+Most first issues can be developed and tested with the offline checks in CONTRIBUTING.md — no Docker or CUBRID server needed. Live CUBRID verification can be completed by CI and maintainers.
+
+Browse open [`good first issue`](https://github.com/cubrid-lab/cubrid-cookbook-python/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) tasks.
+
 ## Disclaimer
 
 This project is part of [CUBRID Lab](https://github.com/cubrid-lab), an independent open-source initiative for CUBRID developer tooling, and is not affiliated with, sponsored by, or endorsed by CUBRID Corporation or the official CUBRID project.
