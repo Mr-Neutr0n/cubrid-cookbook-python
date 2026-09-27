@@ -22,6 +22,136 @@ def workflow_python() -> str:
 
 
 class DocsReasonWorkflowTests(unittest.TestCase):
+    def test_reviewed_physical_and_rendered_contexts(self) -> None:
+        from scripts.check_docs_reason import _HTMLContext, has_docs_not_needed_reason
+
+        link = "[A &amp; B](<blockquote>)\n"
+        html = _HTMLContext(link)
+        html.feed_literals(link, 1, 0, 0)
+        self.assertIn("A & B", html.lines[1])
+        self.assertFalse(html.blocked)
+        for blank in (">", ">   "):
+            self.assertTrue(
+                has_docs_not_needed_reason(f"> quote\n{blank}\nDocs: not needed - tests only")
+            )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "Ordinary prose.\nDocs: not needed - tests only\nMore prose."
+            )
+        )
+        for separator in ("\u2028", "\u0085", "\f"):
+            self.assertFalse(
+                has_docs_not_needed_reason("Example" + separator + "Docs: not needed - hidden")
+            )
+        for tag in ("script", "style", "textarea", "iframe"):
+            self.assertFalse(
+                has_docs_not_needed_reason(f"<{tag}>\nDocs: not needed - hidden\n</{tag}>")
+            )
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    f"<{tag}>hidden</{tag}>\n\nDocs: not needed - tests only"
+                )
+            )
+        for reason in ("\u200b", "\ufeff", "&#8203;"):
+            self.assertFalse(has_docs_not_needed_reason("Docs: not needed - " + reason))
+        self.assertFalse(has_docs_not_needed_reason("-\t> quoted\nDocs: not needed - hidden"))
+        self.assertTrue(
+            has_docs_not_needed_reason("[example](<blockquote>)\n\nDocs: not needed - tests only")
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "`unmatched\n# First\nDocs: not needed - tests only\n# Last `"
+            )
+        )
+        for heading in ("####### invalid", "#no-space", "\\# escaped"):
+            self.assertFalse(
+                has_docs_not_needed_reason(
+                    f"`unmatched\n{heading}\nDocs: not needed - hidden\nlast `"
+                )
+            )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                "Docs: not needed - \u200b<reason> because docs are unchanged"
+            )
+        )
+        self.assertTrue(has_docs_not_needed_reason("Docs: not needed - \u200btests only"))
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "-\t~~~text\n\tDocs: not needed - hidden\n\t~~~\n\nDocs: not needed - tests only"
+            )
+        )
+        for link in ("\\[example](<blockquote>)", "[example](<blockquote>"):
+            self.assertFalse(
+                has_docs_not_needed_reason(link + "\n\nDocs: not needed - hidden\n</blockquote>")
+            )
+        self.assertFalse(
+            has_docs_not_needed_reason(
+                '<blockquote title="[example](<blockquote>)">\nDocs: not needed - hidden\n</blockquote>'
+            )
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason("[<blockquote>](<dest>)\n\nDocs: not needed - hidden")
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "<!-- [example](<blockquote>) -->\nDocs: not needed - tests only"
+            )
+        )
+
+    def test_list_contained_examples_are_not_reasons(self) -> None:
+        from scripts.check_docs_reason import has_docs_not_needed_reason
+
+        for bullet in ("10.", "100."):
+            indentation = " " * (len(bullet) + 1)
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    f"{bullet} ~~~text\n{indentation}Docs: not needed - hidden\n{indentation}~~~\n\nDocs: not needed - tests only"
+                )
+            )
+        self.assertFalse(
+            has_docs_not_needed_reason("~~~text\n    ~~~\nDocs: not needed - hidden\n~~~")
+        )
+        for bullet in ("-", "+", "*", "1.", "2)"):
+            with self.subTest(bullet=bullet):
+                indentation = " " * (len(bullet) + 1)
+                self.assertFalse(
+                    has_docs_not_needed_reason(
+                        f"{bullet} ```text\n{indentation}Docs: not needed - example\n{indentation}```"
+                    )
+                )
+                self.assertFalse(
+                    has_docs_not_needed_reason(f"{bullet} > quoted\n  Docs: not needed - example")
+                )
+                self.assertTrue(
+                    has_docs_not_needed_reason(
+                        f"{bullet} ```text\n{indentation}Docs: not needed - example\n{indentation}```\n\nDocs: not needed - tests only"
+                    )
+                )
+                self.assertTrue(
+                    has_docs_not_needed_reason(
+                        f"{bullet} > quoted\n\nDocs: not needed - tests only"
+                    )
+                )
+        self.assertFalse(
+            has_docs_not_needed_reason("`literal\n- > quoted`\n  Docs: not needed - example")
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "`literal\n- ~~~text\n  <blockquote>\n  ~~~\n\nDocs: not needed - tests only\n`"
+            )
+        )
+        self.assertFalse(
+            has_docs_not_needed_reason("```text\n- ```\n  Docs: not needed - example\n```")
+        )
+        self.assertFalse(has_docs_not_needed_reason("- Docs: not needed - example"))
+        for opener in ("<!--", '<blockquote title="example">'):
+            close = "-->" if opener == "<!--" else "</blockquote>"
+            self.assertTrue(
+                has_docs_not_needed_reason(
+                    f"{opener}\n- ```text\n{close}\nDocs: not needed - tests only"
+                )
+            )
+
     def test_unexpanded_placeholder_is_not_a_reason(self) -> None:
         from scripts.check_docs_reason import has_docs_not_needed_reason
 

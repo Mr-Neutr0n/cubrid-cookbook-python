@@ -254,7 +254,9 @@ ruff format .
 Behavior, SQL, installation, and compatibility changes need matching source docs
 in the same PR. If docs are genuinely unaffected, add a standalone, unfenced line
 such as `Docs: not needed - only regression test data changed` to the PR body.
-Use a plain line in its own paragraph, separated from quoted examples by a blank line.
+Use a standalone physical source line outside quoted/commented/code examples.
+A blank line or quoted blank line can end a preceding Markdown quote; ordinary
+prose before or after the reason does not require a blank paragraph separator.
 The docs gate rejects blank reasons, the literal `<reason>` placeholder, and
 markers shown only in quotes, comments, or fenced examples. The existing
 `docs-not-needed` label remains a maintainer-managed exception for this gate.
