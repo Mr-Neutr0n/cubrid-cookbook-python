@@ -130,6 +130,11 @@ jobs:
       - name: Check release smoke guards (offline)
         run: python -m unittest discover -s tests -p 'test_release*.py' -v
 
+      - name: Check Make and readiness guards (offline)
+        run: |
+          python -m unittest discover -s tests -p 'test_make_commands.py' -v
+          python -m unittest discover -s tests -p 'test_wait_for_cubrid.py' -v
+
       - name: Cache pip downloads
         uses: actions/cache@v4
         with:

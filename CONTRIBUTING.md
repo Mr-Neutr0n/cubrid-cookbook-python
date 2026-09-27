@@ -41,6 +41,26 @@ python3 scripts/check_docs_sync.py
 Intentional coverage exceptions live in `scripts/docs-sync-allowlist.txt` with a
 recorded reason.
 
+### Offline contributor checks
+
+From the repository root, install the existing quickstart dependencies and the
+small offline test toolchain in a virtual environment:
+
+```bash
+python3 -m pip install -r quickstart/5min-fastapi/requirements.txt pytest httpx sqlalchemy ruff==0.16.4
+make check
+```
+
+`make check` runs Ruff, documentation and golden-coverage checks, output-normalizer
+tests, mocked quickstart and AI-agent tests, release dependency guards, and fake
+Make/Compose regression tests. `make test-offline` runs just the offline test
+suites. Each suite uses its own process to avoid conflicting recipe module names.
+These checks require no database and do not prove live CUBRID compatibility;
+run the relevant example or `make verify` against CUBRID for that evidence.
+CI runs the same `make check` command. Both required live smoke matrix jobs also
+run the Make/readiness regression guards before selecting driver dependencies.
+The repository is an example collection, so `pip install -e .` is not supported.
+
 ---
 
 ## Adding Examples
@@ -66,7 +86,7 @@ docs/                # Internal docs (PRD, agent playbook)
 
 ```bash
 # Start CUBRID
-docker compose up -d
+make up
 
 # Example: run a FastAPI template
 cd templates/api-service-fastapi
@@ -77,6 +97,15 @@ uvicorn app:app --reload
 python fundamentals/pycubrid/01_connect.py
 ```
 
+`make up` starts Compose, then waits up to 120 seconds for the existing
+in-container `csql` query to succeed. Each probe and failure diagnostic has a
+5-second limit. To adjust these waits, use `UP_TIMEOUT`, `UP_PROBE_TIMEOUT`, and
+`UP_INTERVAL`, for example `make up UP_TIMEOUT=180`. Image pull/start time occurs
+before the readiness deadline. This query checks the database inside the
+container; it does not verify the driver's CAS connection. On failure the
+command exits nonzero and prints bounded Compose status/log diagnostics, leaving
+the containers and data available for inspection.
+
 ### Golden Verification
 
 Runnable examples are checked against committed golden output with `make verify`,
@@ -84,6 +113,13 @@ which discovers each committed `<dir>/expected/<name>.expected`, runs the matchi
 `<dir>/<name>.py`, pipes it through `scripts/normalize_output.sh`, and diffs the
 result against that golden file. When you add a one-shot example, capture its
 golden output so CI can guard it.
+
+`make verify` checks all goldens by default; use `VERIFY_PATHS=<directory>` to
+select example roots. Empty/missing roots, zero golden targets, a missing script
+for an expected file, discovery/read errors, and failed scripts or normalizers
+all fail the command. A successful summary has at least one pass and no failures
+or skips. Ordinary recipe failures are collected so the remaining selected
+recipes still produce diagnostics.
 
 This is enforced: `scripts/check_expected_coverage.py` (run by `make verify` and
 the smoke-test workflow) fails if any runnable `<dir>/*.py` inside a directory
