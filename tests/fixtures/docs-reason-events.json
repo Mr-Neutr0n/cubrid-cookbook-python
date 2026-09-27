@@ -76,5 +76,7 @@
   {"id": "inline_run_cannot_cross_atx_heading", "event": {"pull_request": {"body": "`unmatched\n# First\nDocs: not needed - tests only\n# Last `", "labels": []}}, "expected_docs_exemption": true},
   {"id": "quoted_blank_ends_lazy_quote", "event": {"pull_request": {"body": "> quote\n>\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true},
   {"id": "ordinary_prose_adjacent_reason", "event": {"pull_request": {"body": "Ordinary prose.\nDocs: not needed - tests only\nMore prose.", "labels": []}}, "expected_docs_exemption": true},
-  {"id": "raw_html_link_label_not_masked", "event": {"pull_request": {"body": "[<blockquote>](<dest>)\n\nDocs: not needed - hidden", "labels": []}}, "expected_docs_exemption": false}
+  {"id": "raw_html_link_label_not_masked", "event": {"pull_request": {"body": "[<blockquote>](<dest>)\n\nDocs: not needed - hidden", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "inline_code_placeholder_is_not_reason", "event": {"pull_request": {"body": "Docs: not needed - `<reason>`", "labels": []}}, "expected_docs_exemption": false},
+  {"id": "heading_ends_lazy_quote", "event": {"pull_request": {"body": "> quote\n# Details\nDocs: not needed - tests only", "labels": []}}, "expected_docs_exemption": true}
 ]

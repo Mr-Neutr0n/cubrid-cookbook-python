@@ -153,8 +153,30 @@ class DocsReasonWorkflowTests(unittest.TestCase):
             )
 
     def test_unexpanded_placeholder_is_not_a_reason(self) -> None:
-        from scripts.check_docs_reason import has_docs_not_needed_reason
+        from scripts.check_docs_reason import _placeholder, has_docs_not_needed_reason
 
+        for unmatched in ("`<reason>``", "``<reason>`", "*<reason>**"):
+            self.assertFalse(_placeholder(unmatched))
+        self.assertFalse(has_docs_not_needed_reason("Docs: not needed - `<reason>`"))
+        for wrapper in ("``", "*", "**", "***", "_", "__", "___"):
+            self.assertFalse(
+                has_docs_not_needed_reason(f"Docs: not needed - {wrapper}&lt;reason&gt;{wrapper}")
+            )
+        for heading in ("####### invalid", "#no-space", "\\# escaped"):
+            self.assertFalse(
+                has_docs_not_needed_reason(f"> quote\n{heading}\nDocs: not needed - hidden")
+            )
+        self.assertFalse(
+            has_docs_not_needed_reason("> quote\n```text\nDocs: not needed - hidden\n```")
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason(
+                "> quote\n```text\nhidden\n```\nDocs: not needed - tests only"
+            )
+        )
+        self.assertTrue(
+            has_docs_not_needed_reason("> quote\n# Details\nDocs: not needed - tests only")
+        )
         self.assertFalse(
             has_docs_not_needed_reason("Docs: not needed - <reason> because docs are unchanged")
         )

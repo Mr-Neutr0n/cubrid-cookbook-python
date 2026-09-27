@@ -24,12 +24,27 @@ from unicodedata import category
 _PREFIX = "Docs: not needed -"
 _LITERAL_RUN = re.compile(r"`+|\\+|\[[^\[\]\n\\`<>]*\]\(<[^<>\n]*>\)")
 _BLOCK_PREFIX = r" {0,3}(?:(?:[-+*]|[0-9]{1,9}[.)])[ \t]+)?"
+_ATX_HEADING = r" {0,3}#{1,6}(?=[ \t\n]|$)"
 
 
 def _reason_text(text: str) -> str:
     return "".join(
         character for character in text if category(character) not in {"Cc", "Cf"}
     ).strip()
+
+
+def _placeholder(text: str) -> bool:
+    reason = _reason_text(unescape(text))
+    if reason.startswith("<reason>"):
+        return True
+    wrapper = re.match(r"`+|\*{1,3}|_{1,3}", reason)
+    if wrapper is None:
+        return False
+    contents = reason[wrapper.end() :].lstrip()
+    if not contents.startswith("<reason>"):
+        return False
+    closing = re.match(re.escape(wrapper[0][0]) + "+", contents[len("<reason>") :].lstrip())
+    return closing is not None and closing[0] == wrapper[0]
 
 
 class _HTMLContext(HTMLParser):
@@ -120,7 +135,7 @@ class _HTMLContext(HTMLParser):
             quote_boundary = re.search(r"\n" + _BLOCK_PREFIX + ">", self.source[start:limit])
             if quote_boundary:
                 limit = start + quote_boundary.start() + 1
-            heading = re.search(r"\n {0,3}#{1,6}(?=[ \t\n]|$)", self.source[start:limit])
+            heading = re.search(r"\n" + _ATX_HEADING, self.source[start:limit])
             if heading:
                 limit = start + heading.start() + 1
             for boundary in re.finditer(
@@ -178,6 +193,11 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             quoted = False
             html.feed("\n")
             continue
+        if quoted and (
+            re.match(_ATX_HEADING, line)
+            or (opener and (opener[1][0] == "~" or "`" not in line[opener.end() :]))
+        ):
+            quoted = False
         if quoted:
             html.feed("\n")
             continue
@@ -215,13 +235,13 @@ def has_docs_not_needed_reason(body: str | None) -> bool:
             html.feed_literals(line + "\n", number, 0, origin)
         if re.match(r" {0,3}" + re.escape(prefix), line):
             position = origin + len(line) - len(line.lstrip(" "))
-            if not _reason_text(line.lstrip(" ")[len(prefix) :]).startswith("<reason>"):
+            if not _placeholder(line.lstrip(" ")[len(prefix) :]):
                 candidates.append((number, position))
     for number, position in candidates:
         line = html.lines.get(number, "").lstrip(" ")
         inside = any(start <= position < end for start, end in html.inline_spans)
         if not inside and number in html.marker_lines and line.startswith(prefix):
             reason = _reason_text(line[len(prefix) :])
-            if reason and not reason.startswith("<reason>"):
+            if reason and not _placeholder(reason):
                 return True
     return False
