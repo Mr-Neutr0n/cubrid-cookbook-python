@@ -82,3 +82,35 @@ jobs:
         do echo "::group::pytest $suite";
         python -m pytest "$suite" -v --tb=short || exit 1;
         echo "::endgroup::"; done
+
+  # Single aggregate check for branch protection, mirroring pycubrid's gate.
+  # None of the jobs above is path-gated or conditional (they all run on every
+  # PR, docs-only included), so anything other than `success` -- failure,
+  # cancelled or an unexpected skip -- fails the gate.
+  ci-gate:
+    name: CI Gate (all checks must pass)
+    if: always()
+    needs: [lint-python, quickstart-tests, docs-sync, doc-lint, pytest-suites]
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Check job results
+        env:
+          R_LINT_PYTHON: ${{ needs.lint-python.result }}
+          R_QUICKSTART_TESTS: ${{ needs.quickstart-tests.result }}
+          R_DOCS_SYNC: ${{ needs.docs-sync.result }}
+          R_DOC_LINT: ${{ needs.doc-lint.result }}
+          R_PYTEST_SUITES: ${{ needs.pytest-suites.result }}
+        run: |
+          set -euo pipefail
+          fail=0
+          for var in R_LINT_PYTHON R_QUICKSTART_TESTS R_DOCS_SYNC R_DOC_LINT R_PYTEST_SUITES; do
+            if [[ "${!var}" != "success" ]]; then
+              echo "::error::Required job ${var#R_} result: ${!var}"
+              fail=1
+            fi
+          done
+          if [[ "$fail" -ne 0 ]]; then
+            exit 1
+          fi
+          echo 'All CI checks passed'
