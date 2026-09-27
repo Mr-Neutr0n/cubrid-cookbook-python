@@ -1,9 +1,13 @@
 SHELL := /bin/bash
-.PHONY: help up down status clean verify demo test-normalize check-coverage docs
+.PHONY: help up down status clean verify demo lint test-offline check check-docs test-normalize check-coverage docs
 
 DOCKER_COMPOSE := docker compose
 NORMALIZE := bash scripts/normalize_output.sh
 PYTHON := python3
+RUFF := ruff
+UP_TIMEOUT ?= 120
+UP_PROBE_TIMEOUT ?= 5
+UP_INTERVAL ?= 2
 
 # Search roots for `make verify`. Defaults to the whole tree; CI narrows this to
 # only the changed example directories on pull requests (see smoke-test.yml).
@@ -16,10 +20,8 @@ help: ## Show this help
 up: ## Start CUBRID database
 	$(DOCKER_COMPOSE) up -d
 	@echo "Waiting for CUBRID to be ready..."
-	@until $(DOCKER_COMPOSE) exec -T cubrid csql -u dba testdb -c "SELECT 1" > /dev/null 2>&1; do \
-		sleep 2; \
-	done
-	@echo "✓ CUBRID is ready at localhost:33000"
+	$(PYTHON) scripts/wait_for_cubrid.py --compose "$(DOCKER_COMPOSE)" \
+		--timeout $(UP_TIMEOUT) --probe-timeout $(UP_PROBE_TIMEOUT) --interval $(UP_INTERVAL)
 
 down: ## Stop CUBRID database
 	$(DOCKER_COMPOSE) down
@@ -33,8 +35,18 @@ clean: ## Stop and remove all data
 
 verify: check-coverage ## Verify example outputs against expected results (VERIFY_PATHS scopes the search roots)
 	@echo "Verifying example outputs in: $(VERIFY_PATHS)"
-	@PASS=0; FAIL=0; SKIP=0; \
-	for expected in $$(find $(VERIFY_PATHS) -path '*/expected/*.expected' | sort); do \
+	@set -o pipefail; \
+	roots=( $(VERIFY_PATHS) ); \
+	if [ "$${#roots[@]}" -eq 0 ]; then echo "ERROR: VERIFY_PATHS must name a directory" >&2; exit 1; fi; \
+	for root in "$${roots[@]}"; do \
+		if [ ! -d "$$root" ]; then echo "ERROR: Verify root is not a directory: $$root" >&2; exit 1; fi; \
+	done; \
+	if ! expected_files=$$(find "$${roots[@]}" -type f -path '*/expected/*.expected' | sort); then \
+		echo "ERROR: Golden discovery failed" >&2; exit 1; \
+	fi; \
+	if [ -z "$$expected_files" ]; then echo "ERROR: No golden targets found" >&2; exit 1; fi; \
+	PASS=0; FAIL=0; SKIP=0; \
+	while IFS= read -r expected; do \
 		dir=$$(dirname "$$(dirname "$$expected")"); \
 		base=$$(basename "$$expected" .expected); \
 		script="$$dir/$$base.py"; \
@@ -49,7 +61,9 @@ verify: check-coverage ## Verify example outputs against expected results (VERIF
 			FAIL=$$((FAIL + 1)); \
 			continue; \
 		fi; \
-		expected_content=$$(cat "$$expected"); \
+		if ! expected_content=$$(cat "$$expected"); then \
+			echo "  ✗ FAIL $$expected (golden read error)"; FAIL=$$((FAIL + 1)); continue; \
+		fi; \
 		if [ "$$actual" = "$$expected_content" ]; then \
 			echo "  ✓ PASS $$script"; \
 			PASS=$$((PASS + 1)); \
@@ -58,10 +72,27 @@ verify: check-coverage ## Verify example outputs against expected results (VERIF
 			diff <(echo "$$actual") <(echo "$$expected_content") || true; \
 			FAIL=$$((FAIL + 1)); \
 		fi; \
-	done; \
+	done <<< "$$expected_files"; \
 	echo ""; \
 	echo "Results: $$PASS passed, $$FAIL failed, $$SKIP skipped"; \
-	[ "$$FAIL" -eq 0 ]
+	[ "$$PASS" -gt 0 ] && [ "$$FAIL" -eq 0 ] && [ "$$SKIP" -eq 0 ]
+
+lint: ## Check Python lint and formatting
+	$(RUFF) check .
+	$(RUFF) format --check .
+
+test-offline: ## Run mocked/offline suites in separate processes (no database required)
+	$(PYTHON) -m pytest quickstart/5min-fastapi/tests -q
+	$(PYTHON) -m pytest tests/test_ai_agent_offline.py -q
+	$(PYTHON) -m unittest discover -s tests -p 'test_release*.py' -v
+	$(PYTHON) -m unittest discover -s tests -p 'test_make_commands.py' -v
+	$(PYTHON) -m unittest discover -s tests -p 'test_wait_for_cubrid.py' -v
+
+check-docs: ## Check documentation coverage and its doctests
+	$(PYTHON) -m doctest scripts/check_docs_sync.py -v
+	$(PYTHON) scripts/check_docs_sync.py
+
+check: lint test-offline check-docs check-coverage test-normalize ## Run offline contributor checks
 
 test-normalize: ## Run before/after unit checks for scripts/normalize_output.sh
 	bash scripts/test_normalize_output.sh

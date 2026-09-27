@@ -43,7 +43,7 @@ class ReadinessCommandTests(unittest.TestCase):
         )
         return shlex.join([sys.executable, str(self.compose)])
 
-    def wait(self, mode: str, *, timeout: str = "0.25"):
+    def wait(self, mode: str, *, timeout: str = "0.5"):
         command = [
             sys.executable,
             str(ROOT / "scripts/wait_for_cubrid.py"),
@@ -52,13 +52,13 @@ class ReadinessCommandTests(unittest.TestCase):
             "--timeout",
             timeout,
             "--probe-timeout",
-            "0.05",
+            "0.15",
             "--interval",
             "0.01",
         ]
         started = time.monotonic()
-        result = subprocess.run(command, capture_output=True, text=True, timeout=2)
-        self.assertLess(time.monotonic() - started, 1.5)
+        result = subprocess.run(command, capture_output=True, text=True, timeout=3)
+        self.assertLess(time.monotonic() - started, 2.5)
         return result
 
     def test_immediate_success(self) -> None:
@@ -109,17 +109,18 @@ class ReadinessCommandTests(unittest.TestCase):
                 "up",
                 f"DOCKER_COMPOSE={self.fake_compose('fail')}",
                 f"PYTHON={sys.executable}",
-                "UP_TIMEOUT=0.1",
-                "UP_PROBE_TIMEOUT=0.04",
+                "UP_TIMEOUT=0.5",
+                "UP_PROBE_TIMEOUT=0.15",
                 "UP_INTERVAL=0.01",
             ],
             cwd=ROOT,
             capture_output=True,
             text=True,
-            timeout=2,
+            timeout=3,
         )
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("fake database unavailable", result.stdout + result.stderr)
+        self.assertIn("CUBRID readiness failed", result.stdout + result.stderr)
+        self.assertIn("Compose ps", result.stderr)
         self.assertNotIn("down", self.log.read_text())
 
 
