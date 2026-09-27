@@ -104,15 +104,28 @@ before recording **Tested upstream versions** and running examples or suites.
 The AI-agent suite runs twice only after this final verification, on PRs too.
 A same-version VCS or local install is also rejected. Golden-backed requirements
 must use published driver releases; the `pycubrid`, `connect`, and `orm-basics`
-fundamentals require the current `>=1.7,<2` release line. The MCP server's
-intentional dispatch-ref/tag fallback remains separate from this driver policy.
-This does not resolve the timing gap between an upstream tag dispatch and its
-subsequent PyPI publication: the report identifies the releases actually installed.
+fundamentals require the current `>=1.7,<2` release line.
+
+Release dispatches accept `pycubrid`, `sqlalchemy-cubrid`, or `cubrid-mcp-server`
+with a canonical `vMAJOR.MINOR.PATCH` ref, matching the upstream dispatch format.
+The job reads the event JSON, validates the request before installation, and
+installs that exact release from PyPI. Publication is retried up to six times,
+with a 60-second installer timeout and 10 seconds between attempts; the maximum
+requested-install budget is 410 seconds. An unavailable release fails explicitly.
+The requested package is pinned through later installs and checked again for its
+exact version and package-index origin before tests.
+
+The intentional MCP git-tag fallback applies only when MCP is not the requested
+package. Its actual origin remains visible in the result summary. Requested
+releases always use the exact PyPI artifact. The final summary runs on failures
+too and includes the request, installed versions/origins, verification commit,
+actual CUBRID server version when available, and job result. This handles the
+tag/publication race in the receiver; upstream notification timing is unchanged.
 
 Run the smoke dependency guards without a database or network:
 
 ```bash
-python3 -m unittest discover -s tests -p 'test_release_smoke.py' -v
+python3 -m unittest discover -s tests -p 'test_release*.py' -v
 ```
 
 #### Excluded from golden verification

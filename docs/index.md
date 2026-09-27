@@ -31,7 +31,10 @@ Numbers and status per [SUPPORT_MATRIX.md](https://github.com/cubrid-lab/cubrid-
 
 Smoke tests keep the selected published driver versions fixed through all
 dependency installs and verify versions and package-index origin before reporting
-the packages exercised. See the
+the packages exercised. Upstream release dispatches install the exact requested
+version, wait within a bounded publication budget, and fail if it remains
+unavailable. A final summary records request, actual versions/origins, verification
+commit, server version and result even when validation fails. See the
 [release smoke dependency contract](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/CONTRIBUTING.md#release-smoke-dependencies).
 
 ## Try the one-command dashboard

@@ -30,19 +30,9 @@ jobs:
         cubrid: ["11.2", "11.4"]
     steps:
       - name: Report trigger
-        env:
-          # Pass untrusted repository_dispatch payload through the environment
-          # instead of interpolating it directly into the shell, which would be
-          # a command-injection vector.
-          EVENT_NAME: ${{ github.event_name }}
-          UPSTREAM_PACKAGE: ${{ github.event.client_payload.package }}
-          UPSTREAM_REF: ${{ github.event.client_payload.ref }}
+        # Request fields are read and validated from GITHUB_EVENT_PATH by Python.
         run: |
-          printf 'Event: %s\n' "$EVENT_NAME"
-          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
-            printf 'Triggered by upstream release: %s %s\n' "$UPSTREAM_PACKAGE" "$UPSTREAM_REF"
-            printf '### Triggered by upstream release: `%s %s`\n' "$UPSTREAM_PACKAGE" "$UPSTREAM_REF" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          printf 'Event: %s\n' "$GITHUB_EVENT_NAME"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -138,7 +128,7 @@ jobs:
         run: python scripts/check_expected_coverage.py
 
       - name: Check release smoke guards (offline)
-        run: python -m unittest discover -s tests -p 'test_release_smoke.py' -v
+        run: python -m unittest discover -s tests -p 'test_release*.py' -v
 
       - name: Cache pip downloads
         uses: actions/cache@v4
@@ -152,7 +142,12 @@ jobs:
             pip-smoke-${{ runner.os }}-
 
       - name: Select released drivers
-        run: pip install pycubrid sqlalchemy sqlalchemy-cubrid
+        timeout-minutes: 10
+        run: |
+          # Reads the event JSON directly; untrusted payload fields never enter shell code.
+          # Requested releases get six bounded PyPI attempts, with no artifact fallback.
+          python scripts/release_smoke.py select \
+            --constraints "$RUNNER_TEMP/release-constraints.txt"
 
       - name: Freeze selected driver releases
         run: |
@@ -164,27 +159,11 @@ jobs:
           echo "PIP_CONSTRAINT=$RUNNER_TEMP/release-constraints.txt" >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        env:
-          # Pass the untrusted repository_dispatch payload through the environment
-          # (never interpolated directly into a shell/URL) to avoid injection.
-          EVENT_NAME: ${{ github.event_name }}
-          UPSTREAM_PACKAGE: ${{ github.event.client_payload.package }}
-          UPSTREAM_REF: ${{ github.event.client_payload.ref }}
         run: |
           # PIP_CONSTRAINT keeps the selected drivers fixed during every install.
           pip install pandas matplotlib
-          # cubrid-mcp-server is on PyPI (v0.4.0+). Install from PyPI; the
-          # dispatched ref is recorded but the PyPI wheel is the dogfood target.
-          # Fallback to the pinned git tag only if PyPI is unreachable.
-          MCP_REF="v0.4.0"
-          if [ "$EVENT_NAME" = "repository_dispatch" ] && [ "$UPSTREAM_PACKAGE" = "cubrid-mcp-server" ]; then
-            case "$UPSTREAM_REF" in
-              v[0-9]*.[0-9]*.[0-9]*)
-                MCP_REF="$UPSTREAM_REF" ;;
-            esac
-          fi
-          pip install cubrid-mcp-server \
-            || pip install "git+https://github.com/cubrid-lab/cubrid-mcp-server.git@${MCP_REF}"
+          # Requested MCP was selected exactly; fallback is only for non-requested MCP.
+          python scripts/release_smoke.py install-mcp --state "$RUNNER_TEMP/release-drivers.json"
 
       - name: Wait for CUBRID readiness
         run: |
@@ -212,6 +191,7 @@ jobs:
           python - <<'PY'
           import sys
           import time
+          import os
 
           import pycubrid
 
@@ -229,7 +209,10 @@ jobs:
                   cursor.execute("SELECT 1")
                   cursor.fetchone()
                   cursor.close()
+                  server_version = conn.get_server_version().replace("\n", " ").replace("\r", " ")
                   conn.close()
+                  with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+                      output.write(f"CUBRID_SERVER_VERSION={server_version}\n")
                   print(f"External pycubrid connection OK (attempt {attempt})")
                   sys.exit(0)
               except Exception as error:
@@ -417,3 +400,14 @@ jobs:
           if [ "${#failed[@]}" -ne 0 ]; then
             exit 1
           fi
+
+      - name: Report release smoke result
+        if: always()
+        env:
+          SMOKE_RESULT: ${{ job.status }}
+        run: |
+          set -o pipefail
+          python scripts/release_smoke.py summary \
+            --state "$RUNNER_TEMP/release-drivers.json" \
+            --result "$SMOKE_RESULT" \
+            | tee -a "$GITHUB_STEP_SUMMARY"
