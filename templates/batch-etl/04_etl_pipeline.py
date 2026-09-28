@@ -20,6 +20,14 @@ def configure_logging() -> None:
         level=logging.INFO,
         format="%(asctime)s | %(levelname)s | %(message)s",
     )
+    # sqlalchemy-cubrid imports its Alembic DefaultImpl on dialect load whenever
+    # Alembic is installed (see alembic_impl.py), and Alembic >=1.18 logs
+    # "setup plugin ..." at INFO from alembic.runtime.plugins on import. That is
+    # Alembic's own plugin-discovery noise, not part of this recipe's ETL
+    # output, so keep the "alembic" logger (and its children) at WARNING here
+    # regardless of whether Alembic happens to be installed alongside this
+    # example.
+    logging.getLogger("alembic").setLevel(logging.WARNING)
 
 
 def extract(engine) -> pd.DataFrame | None:
