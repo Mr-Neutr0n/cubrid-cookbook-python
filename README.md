@@ -32,11 +32,15 @@ Get a working CUBRID + FastAPI app running with Docker in under 5 minutes.
 
 ```bash
 cd quickstart/5min-fastapi
-docker compose up -d
+docker compose up -d --wait cubrid
 pip install -r requirements.txt
 uvicorn app:app --reload
 # Open http://localhost:8000/docs
 ```
+
+The host-run API connects to `localhost` by default (`CUBRID_HOST` overrides it).
+To run both the API and database in Docker instead, use `docker compose up -d --build`
+in that directory; Compose sets `CUBRID_HOST=cubrid` for the API.
 
 ### Migration Guide
 
@@ -55,7 +59,7 @@ Copy-and-customize starting points for real applications:
 | [`django/`](templates/django/) | Minimal Django app on CUBRID |
 | [`async-worker/`](templates/async-worker/) | Background task processing with Celery |
 | [`batch-etl/`](templates/batch-etl/) | Data pipeline with Pandas |
-| [`ai-agent/`](templates/ai-agent/) | AI agent state store + MCP toolchain + RAG metadata |
+| [`ai-agent/`](templates/ai-agent/) | AI agent state store + MCP toolchain + RAG metadata (5 live-tested scripts) |
 | [`dashboard/`](templates/dashboard/) | Interactive dashboard with Streamlit |
 
 ### Performance
@@ -194,6 +198,18 @@ For the ecosystem-wide view, see the [CUBRID Labs Ecosystem Roadmap](https://git
 ## Contributing
 
 PRs welcome! Each example should be self-contained and independently runnable. See [`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+### First contribution
+
+New to CUBRID? Pick the repository that matches what you want to work on:
+
+- Documentation and runnable examples: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
+- Pure-Python driver fixes: [pycubrid](https://github.com/cubrid-lab/pycubrid)
+- SQLAlchemy dialect fixes: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+
+Most first issues can be developed and tested with the offline checks in CONTRIBUTING.md — no Docker or CUBRID server needed. Live CUBRID verification can be completed by CI and maintainers.
+
+Browse open [`good first issue`](https://github.com/cubrid-lab/cubrid-cookbook-python/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) tasks.
 
 ## Disclaimer
 

@@ -40,7 +40,7 @@ Tested combinations of CUBRID server, Python version, and driver/framework.
 |-----------|---------|--------|
 | pycubrid | ≥ 1.6.1 | ✅ Required |
 | sqlalchemy-cubrid | ≥ 1.0 | ✅ Required for SQLAlchemy recipes (≥ 1.4.2 for the async `cubrid+aiopycubrid://` recipe [^async]) |
-| SQLAlchemy | 2.0–2.2 | ✅ |
+| SQLAlchemy | 2.0–2.2 | ✅ Async recipes install the `sqlalchemy[asyncio]` extra for the required greenlet runtime |
 | Flask | ≥ 3.0 | ✅ |
 | Flask-SQLAlchemy | ≥ 3.1 | ✅ |
 | FastAPI | ≥ 0.100 | ✅ |
@@ -49,6 +49,26 @@ Tested combinations of CUBRID server, Python version, and driver/framework.
 | Django | ≥ 5.0 | ✅ (minimal recipe) |
 
 [^async]: The sync SQLAlchemy dialect (`cubrid+pycubrid://`) works from `sqlalchemy-cubrid` 1.0. The async dialect (`cubrid+aiopycubrid://`, used by `fundamentals/async/02_async_sqlalchemy.py`) first became installable from PyPI in 1.2.3 (its entry points were missing from the 1.2.0–1.2.1 releases and 1.2.2 was yanked; 1.2.1 only shipped the `get_pool_class()`/`create_async_engine()` fix), and this cookbook pins it to `≥ 1.4.2` to match the floor of the other advanced SQLAlchemy recipes (pandas, ORM, Django, dashboard).
+
+The `fundamentals/connect` and `fundamentals/orm-basics` requirements use
+`pycubrid>=1.7,<2`; ORM basics also uses `sqlalchemy-cubrid>=1.7,<2`.
+`fundamentals/pycubrid` requires `pycubrid>=1.8,<2`: its
+`16_batch_error_handling` and `20_timezone_datetime` goldens assume the
+`errno`-carrying batch errors (#390) and the CAS session kept across
+`commit()` (#468/#472) that first shipped in pycubrid 1.8.0. These
+example-specific floors do not change the minimum versions for other recipes
+in the table above.
+
+The smoke workflow selects published drivers, constrains all later dependency
+installs to those exact versions, and verifies their versions and package-index
+origin after installation. Its **Tested upstream versions** summary describes the
+drivers actually exercised, rather than versions recorded before example installs.
+Conflicting requirements or VCS/local replacements fail the job. Release dispatches
+also install the exact requested package version, with bounded PyPI publication
+retry, and verify it after all dependency installs. The final summary includes
+requested/installed versions, origin, verification commit, actual server version
+when available, and result even on failed runs. See
+[Release smoke dependencies](CONTRIBUTING.md#release-smoke-dependencies).
 
 ## Recipe Coverage
 
@@ -64,6 +84,14 @@ The cookbook ships **62 recipes**. Verification is split:
   back to SQLite for local runs.
 - The **Streamlit and Django** recipes are **run manually** (see [How to Test](#how-to-test-against-a-specific-version)),
   not in CI.
+- The **FastAPI quickstart** has an offline pytest suite in PR CI for host and
+  Compose configuration, startup, HTTP responses, and database failure cleanup.
+  It uses mocked DB-API connections rather than a live server.
+- The **five AI agent scripts** run via `tests/test_ai_agent.py` against live
+  **11.2 and 11.4** on every smoke-test trigger, including pull requests.
+  Each script runs with a 60-second limit; the suite drops its own example
+  tables before and after each case and runs twice to verify repeatability.
+  `tests/test_ai_agent_offline.py` checks ID handling, MCP errors and cleanup.
 - **CUBRID 11.4** runs in the same CI smoke matrix as 11.2 (its `make verify` goldens
   are checked on both versions).
 

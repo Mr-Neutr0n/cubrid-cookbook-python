@@ -33,6 +33,47 @@ python 04_agent_loop.py        # agent loop
 python 05_chatbot_backend.py   # chatbot backend
 ```
 
+Recipes 01–04 read `CUBRID_HOST`, `CUBRID_PORT`, `CUBRID_DATABASE`,
+`CUBRID_USER`, and `CUBRID_PASSWORD` (defaults: localhost, 33000, testdb, dba,
+empty password). Recipe 05 reads `DATABASE_URL`, defaulting to
+`cubrid+pycubrid://dba@localhost:33000/testdb`.
+
+The examples retain their demonstration data, including fixed session keys
+and the `alice` username. Use a fresh database for a first manual run.
+Recipe 04 creates and seeds `cookbook_agent_products` so its product query
+does not depend on another example. Database connections and the ORM engine
+are closed even if a demonstration raises.
+
+With released pycubrid 1.7.x, INSERT IDs must be read from `cursor.lastrowid`
+before commit. Collection members are bound inside `{?, ...}` expressions;
+`TABLE(collection)` reads SET and SEQUENCE elements as ordinary scalar rows.
+See the [collection recipe](../../fundamentals/sqlalchemy/07_collection_types.py)
+for the driver limitations. The MCP demo completes the initialization handshake,
+requires successful read responses, and verifies that writes are rejected in
+read-only mode; connection or protocol errors fail instead of printing success.
+
+## Tests
+
+Run these commands from the repository root:
+
+```bash
+pip install -r templates/ai-agent/requirements.txt pytest
+python -m pytest tests/test_ai_agent_offline.py -q
+CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb" \
+  python -m pytest tests/test_ai_agent.py -v
+```
+
+The live suite requires a dedicated test database: before and after each
+script it drops only that script's `agent_*`, `rag_*`, or `chat_*` tables
+(foreign-key children first), plus `cookbook_agent_products` for recipe 04.
+It restores environment variables and always uses the pycubrid SQLAlchemy
+backend, even if the supplied URL uses the legacy `cubrid://` scheme.
+Without `CUBRID_TEST_URL`, the five live cases skip; offline tests still run.
+Each script runs in its own process with a 60-second limit; cleanup connections
+have a 10-second connect timeout and a 15-second read timeout. The smoke-test
+matrix runs the suite twice on both CUBRID 11.2 and 11.4 for every trigger,
+including pull requests, to catch stale demonstration keys after teardown.
+
 ## Architecture
 
 ```

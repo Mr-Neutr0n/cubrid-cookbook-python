@@ -8,8 +8,21 @@ in a retrieval-augmented generation pipeline.
 
 from __future__ import annotations
 
+from contextlib import closing
+
 import json
+import os
 import pycubrid
+
+# Same CUBRID_* env vars as 02_mcp_toolchain.py, so a single live test
+# instance (or a local dev CUBRID) configures every recipe in this folder.
+DB_CONFIG = {
+    "host": os.environ.get("CUBRID_HOST", "localhost"),
+    "port": int(os.environ.get("CUBRID_PORT", "33000")),
+    "user": os.environ.get("CUBRID_USER", "dba"),
+    "password": os.environ.get("CUBRID_PASSWORD", ""),
+    "database": os.environ.get("CUBRID_DATABASE", "testdb"),
+}
 
 DDL = [
     """
@@ -17,7 +30,7 @@ DDL = [
         id INT AUTO_INCREMENT PRIMARY KEY,
         title VARCHAR(200) NOT NULL,
         source VARCHAR(500),
-        content TEXT,
+        content STRING,
         metadata JSON,
         tags SET(VARCHAR(50)),
         chunk_count INT DEFAULT 0,
@@ -29,7 +42,7 @@ DDL = [
         id INT AUTO_INCREMENT PRIMARY KEY,
         document_id INT NOT NULL,
         chunk_index INT NOT NULL,
-        content TEXT,
+        content STRING,
         token_count INT,
         embedding_ref VARCHAR(500),
         FOREIGN KEY (document_id) REFERENCES rag_documents(id)
@@ -38,9 +51,9 @@ DDL = [
     """
     CREATE TABLE IF NOT EXISTS rag_retrieval_log (
         id INT AUTO_INCREMENT PRIMARY KEY,
-        query_text TEXT,
+        query_text STRING,
         retrieved_doc_ids SEQUENCE(INT),
-        llm_response TEXT,
+        llm_response STRING,
         relevance_scores JSON,
         created_at DATETIME DEFAULT SYS_DATETIME
     )
@@ -100,14 +113,18 @@ def ingest_document(
     cur = conn.cursor()
 
     # Store the document with its metadata
-    tags = "{" + ", ".join(f"'{t}'" for t in doc["tags"]) + "}"
+    tags = "{" + ", ".join("?" for _ in doc["tags"]) + "}"
     cur.execute(
-        f"INSERT INTO rag_documents (title, source, content, metadata, tags) "
-        f"VALUES (?, ?, ?, ?, {tags})",
-        [doc["title"], doc["source"], doc["content"], json.dumps(doc["metadata"])],
+        "INSERT INTO rag_documents (title, source, content, metadata, tags) "
+        "VALUES (?, ?, ?, ?, " + tags + ")",
+        [doc["title"], doc["source"], doc["content"], json.dumps(doc["metadata"]), *doc["tags"]],
     )
+    doc_id = cur.lastrowid
+    if doc_id is None:
+        cur.close()
+        conn.rollback()
+        raise RuntimeError("Document INSERT did not return an auto-increment ID")
     conn.commit()
-    doc_id = int(conn.get_last_insert_id())
 
     # Simple chunking (word-based, for demonstration)
     words = doc["content"].split()
@@ -137,17 +154,23 @@ def keyword_search(
     with CUBRID-side filtering."""
     cur = conn.cursor()
     cur.execute(
-        "SELECT id, title, tags, metadata FROM rag_documents WHERE content LIKE ? ORDER BY id",
+        "SELECT id, title, metadata FROM rag_documents WHERE content LIKE ? ORDER BY id",
         [f"%{query}%"],
     )
     results = []
-    for row in cur:
+    rows = cur.fetchall()
+    for row in rows:
+        # The released driver returns raw collection payloads; TABLE() reads elements.
+        cur.execute(
+            "SELECT t.tag FROM rag_documents, TABLE(tags) AS t(tag) WHERE id = ?",
+            [row[0]],
+        )
         results.append(
             {
                 "id": row[0],
                 "title": row[1],
-                "tags": row[2] if isinstance(row[2], list) else [row[2]],
-                "metadata": json.loads(row[3]) if row[3] else {},
+                "tags": [tag[0] for tag in cur.fetchall()],
+                "metadata": json.loads(row[2]) if row[2] else {},
             }
         )
     cur.close()
@@ -163,66 +186,73 @@ def log_retrieval(
 ) -> None:
     """Log a RAG interaction for analytics and evaluation."""
     cur = conn.cursor()
-    ids_seq = "{" + ", ".join(str(i) for i in doc_ids) + "}"
+    # Collection members are scalar bound values, not a quoted '{...}' string.
+    ids_seq = "{" + ", ".join("?" for _ in doc_ids) + "}"
     cur.execute(
         "INSERT INTO rag_retrieval_log (query_text, retrieved_doc_ids, llm_response, relevance_scores) "
-        "VALUES (?, ?, ?, ?)",
-        [query, ids_seq, llm_response, json.dumps(scores)],
+        "VALUES (?, " + ids_seq + ", ?, ?)",
+        [query, *doc_ids, llm_response, json.dumps(scores)],
     )
     conn.commit()
     cur.close()
 
 
 def main() -> None:
-    conn = pycubrid.connect(database="testdb")
-    setup(conn)
+    with closing(pycubrid.connect(**DB_CONFIG)) as conn:
+        setup(conn)
 
-    # Ingest sample documents
-    print("Ingesting documents...")
-    for doc in SAMPLE_DOCS:
-        doc_id = ingest_document(conn, doc)
-        print(f"  [{doc_id}] {doc['title']} ({len(doc['tags'])} tags)")
+        # Ingest sample documents
+        print("Ingesting documents...")
+        for doc in SAMPLE_DOCS:
+            doc_id = ingest_document(conn, doc)
+            print(f"  [{doc_id}] {doc['title']} ({len(doc['tags'])} tags)")
 
-    # Simulate a RAG query
-    print("\nQuery: 'How do I connect Python to CUBRID?'")
-    results = keyword_search(conn, "Python")
-    print(f"  Retrieved {len(results)} documents:")
-    for r in results:
-        print(f"    [{r['id']}] {r['title']} tags={r['tags']}")
+        # Simulate a RAG query
+        print("\nQuery: 'How do I connect Python to CUBRID?'")
+        results = keyword_search(conn, "Python")
+        print(f"  Retrieved {len(results)} documents:")
+        for r in results:
+            print(f"    [{r['id']}] {r['title']} tags={r['tags']}")
 
-    # Simulate LLM synthesis (this is where you'd call OpenAI/Anthropic)
-    llm_response = (
-        "Based on the retrieved documents, pycubrid is the pure Python "
-        "DB-API 2.0 driver for CUBRID. You can install it with "
-        "'pip install pycubrid' and connect using pycubrid.connect()."
-    )
+        # Simulate LLM synthesis (this is where you'd call OpenAI/Anthropic)
+        llm_response = (
+            "Based on the retrieved documents, pycubrid is the pure Python "
+            "DB-API 2.0 driver for CUBRID. You can install it with "
+            "'pip install pycubrid' and connect using pycubrid.connect()."
+        )
 
-    # Log the full interaction
-    log_retrieval(
-        conn,
-        "How do I connect Python to CUBRID?",
-        [r["id"] for r in results],
-        llm_response,
-        [0.92, 0.85, 0.78],
-    )
-    print("  Logged to rag_retrieval_log")
+        # Log the full interaction
+        log_retrieval(
+            conn,
+            "How do I connect Python to CUBRID?",
+            [r["id"] for r in results],
+            llm_response,
+            [0.92] * len(results),
+        )
+        print("  Logged to rag_retrieval_log")
 
-    # Verify: retrieve logged interactions with JSON scores
-    cur = conn.cursor()
-    cur.execute(
-        "SELECT query_text, retrieved_doc_ids, relevance_scores "
-        "FROM rag_retrieval_log ORDER BY id DESC LIMIT 1"
-    )
-    row = cur.fetchone()
-    if row:
-        print(f"  Logged query: {row[0][:40]}...")
-        print(f"  Doc IDs: {row[1]}")
-        scores = json.loads(row[2]) if row[2] else []
-        print(f"  Relevance scores: {scores}")
-        assert len(scores) == 3
-    cur.close()
-    conn.close()
-    print("\n✓ RAG metadata hybrid working")
+        # Verify: retrieve logged interactions with JSON scores
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT id, query_text, relevance_scores "
+            "FROM rag_retrieval_log ORDER BY id DESC LIMIT 1"
+        )
+        row = cur.fetchone()
+        if row:
+            print(f"  Logged query: {row[1][:40]}...")
+            cur.execute(
+                "SELECT d.doc_id FROM rag_retrieval_log, TABLE(retrieved_doc_ids) AS d(doc_id) "
+                "WHERE id = ?",
+                [row[0]],
+            )
+            logged_doc_ids = [result[0] for result in cur.fetchall()]
+            print(f"  Doc IDs: {logged_doc_ids}")
+            assert logged_doc_ids == [result["id"] for result in results]
+            scores = json.loads(row[2]) if row[2] else []
+            print(f"  Relevance scores: {scores}")
+            assert len(scores) == len(results)
+        cur.close()
+        print("\n✓ RAG metadata hybrid working")
 
 
 if __name__ == "__main__":

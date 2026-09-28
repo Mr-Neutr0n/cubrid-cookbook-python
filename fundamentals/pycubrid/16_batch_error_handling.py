@@ -103,8 +103,10 @@ def main() -> None:
         try:
             cur.executemany_batch(sql_list, auto_commit=False)
         except IntegrityError as exc:
-            # The CAS error code is exposed on the exception (exc.args[0]
-            # is typically the numeric code; exc.args[1] is the message).
+            # exc.args holds only the message; the CAS error code and SQLSTATE
+            # are on exc.errno / exc.sqlstate. Since pycubrid 1.8.0, str(exc)
+            # appends "(errno=..., description=..., sqlstate=...)", which the
+            # golden normalizer strips.
             print(f"[3] Caught IntegrityError as expected: {exc}")
             print(f"    args={exc.args!r}")
         except DatabaseError as exc:

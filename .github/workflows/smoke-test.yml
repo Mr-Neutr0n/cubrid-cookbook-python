@@ -30,19 +30,9 @@ jobs:
         cubrid: ["11.2", "11.4"]
     steps:
       - name: Report trigger
-        env:
-          # Pass untrusted repository_dispatch payload through the environment
-          # instead of interpolating it directly into the shell, which would be
-          # a command-injection vector.
-          EVENT_NAME: ${{ github.event_name }}
-          UPSTREAM_PACKAGE: ${{ github.event.client_payload.package }}
-          UPSTREAM_REF: ${{ github.event.client_payload.ref }}
+        # Request fields are read and validated from GITHUB_EVENT_PATH by Python.
         run: |
-          printf 'Event: %s\n' "$EVENT_NAME"
-          if [ "$EVENT_NAME" = "repository_dispatch" ]; then
-            printf 'Triggered by upstream release: %s %s\n' "$UPSTREAM_PACKAGE" "$UPSTREAM_REF"
-            printf '### Triggered by upstream release: `%s %s`\n' "$UPSTREAM_PACKAGE" "$UPSTREAM_REF" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          printf 'Event: %s\n' "$GITHUB_EVENT_NAME"
 
       - name: Checkout
         uses: actions/checkout@v4
@@ -137,6 +127,14 @@ jobs:
         # Always full-repo (not scoped) and needs no database.
         run: python scripts/check_expected_coverage.py
 
+      - name: Check release smoke guards (offline)
+        run: python -m unittest discover -s tests -p 'test_release*.py' -v
+
+      - name: Check Make and readiness guards (offline)
+        run: |
+          python -m unittest discover -s tests -p 'test_make_commands.py' -v
+          python -m unittest discover -s tests -p 'test_wait_for_cubrid.py' -v
+
       - name: Cache pip downloads
         uses: actions/cache@v4
         with:
@@ -148,44 +146,29 @@ jobs:
           restore-keys: |
             pip-smoke-${{ runner.os }}-
 
-      - name: Install dependencies
-        env:
-          # Pass the untrusted repository_dispatch payload through the environment
-          # (never interpolated directly into a shell/URL) to avoid injection.
-          EVENT_NAME: ${{ github.event_name }}
-          UPSTREAM_PACKAGE: ${{ github.event.client_payload.package }}
-          UPSTREAM_REF: ${{ github.event.client_payload.ref }}
+      - name: Select released drivers
+        timeout-minutes: 10
         run: |
-          pip install pycubrid sqlalchemy sqlalchemy-cubrid
-          # Extra deps used by templates (e.g. batch-etl). Installed separately
-          # so the released pycubrid/sqlalchemy-cubrid above are not overridden
-          # by the git-pinned versions in the template requirements files.
-          pip install pandas matplotlib
-          # cubrid-mcp-server is on PyPI (v0.4.0+). Install from PyPI; the
-          # dispatched ref is recorded but the PyPI wheel is the dogfood target.
-          # Fallback to the pinned git tag only if PyPI is unreachable.
-          MCP_REF="v0.4.0"
-          if [ "$EVENT_NAME" = "repository_dispatch" ] && [ "$UPSTREAM_PACKAGE" = "cubrid-mcp-server" ]; then
-            case "$UPSTREAM_REF" in
-              v[0-9]*.[0-9]*.[0-9]*)
-                MCP_REF="$UPSTREAM_REF" ;;
-            esac
-          fi
-          pip install cubrid-mcp-server \
-            || pip install "git+https://github.com/cubrid-lab/cubrid-mcp-server.git@${MCP_REF}"
+          # Reads the event JSON directly; untrusted payload fields never enter shell code.
+          # Requested releases get six bounded PyPI attempts, with no artifact fallback.
+          python scripts/release_smoke.py select \
+            --constraints "$RUNNER_TEMP/release-constraints.txt"
 
-      - name: Record tested versions
+      - name: Freeze selected driver releases
         run: |
-          {
-            echo "### Tested upstream versions";
-            echo "";
-            echo "| Package | Version |";
-            echo "| --- | --- |";
-            for pkg in pycubrid sqlalchemy-cubrid cubrid-mcp-server; do
-              ver=$(pip show "$pkg" | awk -F': ' '/^Version:/ {print $2}');
-              echo "| $pkg | ${ver:-not installed} |";
-            done
-          } | tee -a "$GITHUB_STEP_SUMMARY"
+          python scripts/release_smoke.py freeze \
+            --state "$RUNNER_TEMP/release-drivers.json" \
+            --constraints "$RUNNER_TEMP/release-constraints.txt"
+          # All later pip installs, including transitive dependencies and the
+          # intentional MCP git-tag fallback, must preserve the chosen releases.
+          echo "PIP_CONSTRAINT=$RUNNER_TEMP/release-constraints.txt" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: |
+          # PIP_CONSTRAINT keeps the selected drivers fixed during every install.
+          pip install pandas matplotlib
+          # Requested MCP was selected exactly; fallback is only for non-requested MCP.
+          python scripts/release_smoke.py install-mcp --state "$RUNNER_TEMP/release-drivers.json"
 
       - name: Wait for CUBRID readiness
         run: |
@@ -213,6 +196,7 @@ jobs:
           python - <<'PY'
           import sys
           import time
+          import os
 
           import pycubrid
 
@@ -230,7 +214,10 @@ jobs:
                   cursor.execute("SELECT 1")
                   cursor.fetchone()
                   cursor.close()
+                  server_version = conn.get_server_version().replace("\n", " ").replace("\r", " ")
                   conn.close()
+                  with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+                      output.write(f"CUBRID_SERVER_VERSION={server_version}\n")
                   print(f"External pycubrid connection OK (attempt {attempt})")
                   sys.exit(0)
               except Exception as error:
@@ -242,33 +229,47 @@ jobs:
           sys.exit(1)
           PY
 
+      - name: Install AI agent test dependencies
+        # PIP_CONSTRAINT preserves the selected released drivers on PRs too.
+        run: pip install pytest
+
       - name: Install per-example dependencies
         # Golden-verified examples may declare their own requirements.txt (e.g.
         # fundamentals/alembic needs alembic). Install the requirements of every
         # example root that owns an expected/ folder so `make verify` can import
-        # them. Scoped to expected-owning roots on purpose: excluded long-running
-        # templates pin git refs that would override the released pycubrid /
-        # sqlalchemy-cubrid installed above.
+        # them. Every install uses the exact selected driver-release constraints;
+        # incompatible requirements fail rather than replacing a tested release.
         run: |
-          python - <<'PY'
-          import subprocess
-          import sys
-          from pathlib import Path
+          python scripts/release_smoke.py install-examples --constraints "$PIP_CONSTRAINT"
 
-          roots = sorted(
-              {p.parent for p in Path(".").glob("**/expected") if p.is_dir()}
-          )
-          for root in roots:
-              if any(part.startswith(".") for part in root.parts):
-                  continue
-              req = root / "requirements.txt"
-              if not req.is_file():
-                  continue
-              print(f"Installing example requirements: {req}", file=sys.stderr)
-              subprocess.check_call(
-                  [sys.executable, "-m", "pip", "install", "-r", str(req)]
-              )
-          PY
+      - name: Install pytest suite dependencies (non-PR runs only)
+        # Pull requests skip the full pytest suites; ci.yml exercises representative
+        # recipes. Install all dependencies before recording the tested versions.
+        if: github.event_name != 'pull_request'
+        # One explicit list avoids conflicting pins in individual recipe files.
+        # PIP_CONSTRAINT also covers these packages' transitive driver requirements.
+        run: pip install flask flask-sqlalchemy fastapi email-validator httpx pytest pytest-asyncio
+
+      - name: Record tested versions
+        run: |
+          set -o pipefail
+          # Fail if a driver version or package-index provenance changed, including
+          # a same-version VCS/local replacement. Only then publish the summary.
+          python scripts/release_smoke.py verify \
+            --state "$RUNNER_TEMP/release-drivers.json" --report \
+            | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Test AI agent examples against live CUBRID
+        timeout-minutes: 5
+        env:
+          CUBRID_TEST_URL: cubrid+pycubrid://dba@localhost:33000/testdb
+        run: |
+          # Every dependency is installed and final driver provenance verified.
+          python -m pytest tests/test_ai_agent_offline.py -q
+          # Each example has dedicated table cleanup. Repeat to catch stale
+          # fixed demonstration keys and incomplete teardown on the same server.
+          python -m pytest tests/test_ai_agent.py -v --tb=short
+          python -m pytest tests/test_ai_agent.py -v --tb=short
 
       - name: Run make verify
         run: make verify VERIFY_PATHS="${VERIFY_PATHS:-.}"
@@ -355,20 +356,6 @@ jobs:
           print("cubrid-mcp-server real-usage smoke OK")
           PY
 
-      - name: Install pytest suite dependencies (non-PR runs only)
-        # Pull requests skip the pytest suites so the PR gate stays fast: ci.yml
-        # runs one representative recipe per framework there (#140). The full
-        # matrix runs on push to main, the nightly schedule, upstream releases
-        # and manual dispatch, like the full `make verify` above.
-        if: github.event_name != 'pull_request'
-        # The Flask and FastAPI recipe suites run in this job's environment. One
-        # explicit list instead of each recipe's requirements.txt: those files pin
-        # different versions (api-service-fastapi recipe 10 pins pytest==8.3.3, for
-        # example), so installing them one after another would downgrade packages
-        # under the other suites. pycubrid and sqlalchemy-cubrid are not listed, so
-        # the releases installed above stay the versions under test.
-        run: pip install flask flask-sqlalchemy fastapi email-validator httpx pytest pytest-asyncio
-
       - name: Run Flask and FastAPI pytest suites (non-PR runs only)
         if: github.event_name != 'pull_request'
         # Each suite's tests/conftest.py switches to live CUBRID when
@@ -418,3 +405,14 @@ jobs:
           if [ "${#failed[@]}" -ne 0 ]; then
             exit 1
           fi
+
+      - name: Report release smoke result
+        if: always()
+        env:
+          SMOKE_RESULT: ${{ job.status }}
+        run: |
+          set -o pipefail
+          python scripts/release_smoke.py summary \
+            --state "$RUNNER_TEMP/release-drivers.json" \
+            --result "$SMOKE_RESULT" \
+            | tee -a "$GITHUB_STEP_SUMMARY"

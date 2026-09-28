@@ -24,7 +24,8 @@ fundamentals/      → Step-by-step reference for core operations
 
 - This is a **Python-only** repository. No Node.js, Go, Rust, or TypeScript content.
 - Treat examples as user-facing reference implementations, not throwaway demos.
-- All content must be written in **English**.
+- Example content must be written in **English**.
+- Use English for GitHub issues, pull requests, and comments; localized documentation is welcome, and no specific tool is required.
 - Use `cookbook_` table prefix in all SQL examples.
 - Avoid CUBRID reserved words in column names: `value` → `val`, `count` → `cnt`, `data` → `file_data`.
 - Use `from __future__ import annotations` in all Python files.
@@ -36,6 +37,12 @@ fundamentals/      → Step-by-step reference for core operations
 
 All non-trivial work across cubrid-lab repositories MUST follow this 4-phase cycle:
 
+Maintainers coordinate Oracle/Codex reviews, project-specific agent/tool setup,
+release classification, labels, and integration. Outside contributors provide
+normal motivation, code, tests and docs; no Oracle or agent installation is a
+contribution prerequisite. Preserve actual contributor authorship and add tool
+attribution only when that tool was used for the commit.
+
 1. **Oracle Design Review** — Consult Oracle before implementation to validate architecture, API surface, and approach. Raise concerns early.
 2. **Implementation** — Build the feature/fix with tests. Follow existing codebase patterns.
 3. **Documentation Update** — Update ALL affected docs (README, CHANGELOG, ROADMAP, API docs, SUPPORT_MATRIX, PRD, etc.) in the same PR or as an immediate follow-up. Code without doc updates is incomplete.
@@ -43,12 +50,37 @@ All non-trivial work across cubrid-lab repositories MUST follow this 4-phase cyc
 
 Skipping any phase requires explicit justification. Trivial changes (typos, single-line fixes) may skip phases 1 and 4.
 
+## Agent PR scope and review guardrails
+
+- Before editing, record one acceptance contract, affected files, explicit non-goals
+  and the validation plan. Keep each PR to one independently reviewable change.
+  Separate contributor guidance, CI configuration and new validator behavior.
+- Triage AI findings against that contract, a supported-environment reproduction
+  and impact. AI severity is not authority to add capabilities or widen the contract;
+  obtain explicit maintainer direction or defer out-of-scope work to a separate issue.
+- Batch accepted fixes locally and run relevant checks before publishing a review
+  head. Deduplicate agent-initiated review requests by head SHA and review purpose.
+- Default to two published AI review rounds total per scoped PR/task: the initial
+  review and one corrective re-review. New commits do not reset this budget.
+  Further rounds or scope expansion require explicit maintainer direction.
+- If unresolved work needs another round at the limit, stop automatic revisions;
+  keep the PR Draft and report incomplete work, blockers and a proposed split.
+  Never merge with unresolved critical/security defects or failed required CI.
+- Maintain one editable, agent-owned English status comment. Avoid bot mentions in
+  routine updates, per-finding progress replies and repeated review requests.
+  Preserve contributor history; revisit external PRs only after an author-updated head SHA.
+
 ## Validation
 
-- `docker compose up -d` (starts CUBRID 11.2)
+- `make check` from the repository root (offline contributor checks)
+- `make up` (starts CUBRID 11.2 with bounded readiness checking)
 - Run the relevant example: `python <file>.py`
-- Verify output matches expected behavior
-- `docker compose down`
+- `make verify VERIFY_PATHS=<example-directory>` for matching live goldens
+- `make docs` for staged docs and strict MkDocs validation
+- `make down` after live checks
+
+Record executed commands/results separately from AI review and checks not run.
+Explain gaps; maintainers coordinate the remaining required CI/live validation.
 
 ## Issue Labeling (cubrid-lab org standard)
 
@@ -68,6 +100,10 @@ Do not introduce variants such as `priority:high`, `priority-high`, `P1`, or
 create it with the exact name above before filing the issue. This policy governs
 new issue creation, not bulk renaming or relabeling existing issues unless
 explicitly requested.
+
+Maintainers/triagers own label assignment and creation in the authorized filing
+or triage workflow. Reporters describe urgency and scope without needing GitHub
+label permissions; agents filing for maintainers retain the canonical rules.
 
 Priority reflects urgency and impact; size estimates implementation effort and
 helps contributors pick appropriately scoped work.
@@ -91,11 +127,33 @@ Rules:
    past `size: S`, re-scope it or drop the `good first issue` label.
 4. **`size: XL` is a signal to split**, not a green light to start a sprawling change.
 
+### Good first issue lifecycle
+
+- Unclaimed: `good first issue`.
+- A PR is opened for it: remove `good first issue`, add `status: in progress`.
+- PR merged: the issue closes.
+- PR closed without merging: first check that no other open PR still addresses the issue. Only if none remains, remove `status: in progress` and restore `good first issue`; otherwise keep it in progress.
+- Keep 3–5 genuinely unclaimed good first issues per repository; a good first issue should have a small blast radius and an existing pattern or reference PR to follow, not just a small diff.
+
 ## Documentation definition of done
 
 Any change that adds, renames, removes, or alters the behavior of an example — or changes supported CUBRID/driver/Python versions — MUST update the matching documentation in the **same PR**. At minimum keep in sync: `SUPPORT_MATRIX.md`, `CHANGELOG.md`, `README.md` (incl. version badges/claims), and any affected `docs/`.
 
-If no documentation change is needed, state the reason explicitly in the PR body as `Docs: not needed - <reason>` or apply the `docs-not-needed` label. This is enforced by the `docs-sync` CI check (which complements phase 3 of the workflow above).
+If no documentation change is needed, put a real, nonempty reason on a standalone
+`Docs: not needed - <reason>` PR-body line, outside quotes/comments/code fences.
+The literal placeholder is not a reason. The existing `docs-not-needed` label is
+a maintainer-managed alternative for the docs gate only.
+
+Contributors may request translation help with a language and reason; the request
+does not authorize a bypass. Keep Korean synchronization required and community
+languages advisory. Only the existing maintainer-approved `translations-deferred`
+label skips translation enforcement; maintainers record and own follow-up.
+
+Shared doc-lint/live-smoke callers are pinned to reviewed upstream commits.
+Before updating, verify the commit, workflow files and inputs, preserve caller
+inputs/permissions/advisory mode, and run checks through a PR. Upstream doc-lint
+still downloads its scanner/configuration from main, so the pin is not a claim
+that every fetched resource is immutable.
 
 Do not mark work complete until code, tests, and documentation are consistent.
 
