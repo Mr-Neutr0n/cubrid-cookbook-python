@@ -28,8 +28,11 @@ make up
 pip install -r requirements.txt
 ```
 
-These recipes use the published `pycubrid>=1.7,<2` release line. The smoke
-workflow constrains installation to its selected published driver version.
+These recipes use the published `pycubrid>=1.8,<2` release line: the
+`16_batch_error_handling.py` and `20_timezone_datetime.py` goldens assume the
+`errno`-carrying batch errors (#390) and the CAS session kept across
+`commit()` (#468/#472) that first shipped in 1.8.0. The smoke workflow
+constrains installation to its selected published driver version.
 
 ## Examples
 
