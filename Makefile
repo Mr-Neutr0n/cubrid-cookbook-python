@@ -87,12 +87,14 @@ test-offline: ## Run mocked/offline suites in separate processes (no database re
 	$(PYTHON) -m unittest discover -s tests -p 'test_release*.py' -v
 	$(PYTHON) -m unittest discover -s tests -p 'test_make_commands.py' -v
 	$(PYTHON) -m unittest discover -s tests -p 'test_wait_for_cubrid.py' -v
+	$(PYTHON) -m unittest discover -s tests -p 'test_support_matrix_counts.py' -v
 
 check-docs: ## Check documentation coverage and its doctests
 	$(PYTHON) -m doctest scripts/check_docs_reason.py -v
 	$(PYTHON) -m unittest discover -s tests -p 'test_docs_reason.py' -v
 	$(PYTHON) -m doctest scripts/check_docs_sync.py -v
 	$(PYTHON) scripts/check_docs_sync.py
+	$(PYTHON) scripts/check_support_matrix_counts.py
 
 check: lint test-offline check-docs check-coverage test-normalize ## Run offline contributor checks
 
@@ -101,7 +103,6 @@ test-normalize: ## Run before/after unit checks for scripts/normalize_output.sh
 
 check-coverage: ## Fail if any opted-in example script lacks an .expected golden
 	$(PYTHON) scripts/check_expected_coverage.py
-	$(PYTHON) scripts/check_support_matrix_counts.py
 
 demo: up verify ## Full demo: start DB, verify all examples
 	@echo ""

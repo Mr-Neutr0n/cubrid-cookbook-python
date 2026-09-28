@@ -2,8 +2,8 @@
 
 Runnable Python examples and production-shaped application templates for CUBRID — from a five-minute first query to natural-language database access, everything installs from PyPI.
 
-- **68 runnable examples** across pycubrid, SQLAlchemy, pandas, Alembic, JSON, isolation levels, and migration
-- **45 of them are CI-verified goldens** — `make verify` compares exact stdout against `expected/*.expected` files on a **CUBRID 11.2 + 11.4 job matrix**
+- **100+ runnable recipes** across pycubrid, SQLAlchemy, pandas, Alembic, JSON, isolation levels, migration, and the application templates (exact counts in the [support matrix](support-matrix.md#recipe-coverage))
+- **Every golden-backed recipe is CI-verified** — `make verify` compares exact stdout against `expected/*.expected` files on a **CUBRID 11.2 + 11.4 job matrix**
 - **6 application templates**: FastAPI service, Flask app, Django app, Streamlit dashboard, Celery async worker, pandas batch ETL — the dashboard is a one-command `docker compose up` demo
 
 ## The three paths
