@@ -15,6 +15,16 @@ from models import ExpirySweep, InventoryItem, StockReservation  # pyright: igno
 api = Blueprint("inventory_reservation", __name__)
 
 
+def naive_utc_now() -> datetime:
+    """Return the current UTC time without tzinfo.
+
+    The DateTime columns store naive UTC values, so everything read back from the
+    database is naive. Comparing that with an aware datetime raises TypeError, so
+    any "now" compared against these columns must be naive too.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _payload() -> dict[str, object]:
     data = request.get_json(silent=True)
     if isinstance(data, dict):
@@ -107,7 +117,7 @@ def create_reservation():
     if item is None:
         return jsonify({"error": "item not found"}), 404
 
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     expires_at = now + timedelta(seconds=ttl_seconds)
 
     updated = db.session.execute(
@@ -178,7 +188,7 @@ def confirm_reservation(reservation_key: str):
     if reservation is None:
         return jsonify({"error": "reservation not found"}), 404
 
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     if reservation.state != "active":
         return jsonify({"error": "reservation is not active"}), 409
     if reservation.expires_at <= now:
@@ -239,7 +249,7 @@ def cancel_reservation(reservation_key: str):
     if reservation.state != "active":
         return jsonify({"error": "reservation is not active"}), 409
 
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     reservation_update = db.session.execute(
         update(StockReservation)
         .where(
@@ -285,7 +295,7 @@ def cancel_reservation(reservation_key: str):
 
 @api.post("/sweeps/expire")
 def expire_reservations():
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     sweep = ExpirySweep()
     sweep.started_at = now
     sweep.status = "running"
@@ -348,7 +358,7 @@ def expire_reservations():
         except Exception:
             failed_count += 1
 
-    sweep.finished_at = datetime.now(timezone.utc)
+    sweep.finished_at = naive_utc_now()
     sweep.status = "completed" if failed_count == 0 else "completed_with_errors"
     sweep.expired_count = expired_count
     if failed_count > 0:

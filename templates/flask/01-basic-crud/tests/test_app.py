@@ -16,12 +16,11 @@ create_app = importlib.import_module("app").create_app
 
 
 @pytest.fixture
-def client(tmp_path: Path):
-    database_path = tmp_path / "test.db"
+def client(database_config: dict[str, object]):
     app = create_app(
         {
             "TESTING": True,
-            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{database_path}",
+            **database_config,
             "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         }
     )

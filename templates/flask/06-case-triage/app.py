@@ -18,6 +18,16 @@ db = importlib.import_module("database").db
 cases_bp = Blueprint("cases", __name__, url_prefix="/api")
 
 
+def naive_utc_now() -> datetime:
+    """Return the current UTC time without tzinfo.
+
+    The DateTime columns store naive UTC values, so everything read back from the
+    database is naive. Comparing that with an aware datetime raises TypeError, so
+    any "now" compared against these columns must be naive too.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _json_payload() -> Mapping[str, object]:
     payload_value = request.get_json(silent=True)
     if isinstance(payload_value, dict):
@@ -144,7 +154,7 @@ def claim_case(case_id: int):
     except LookupError:
         return jsonify({"error": "Case not found."}), 404
 
-    claim_error = _claim_case(review_case, agent, datetime.now(timezone.utc))
+    claim_error = _claim_case(review_case, agent, naive_utc_now())
     if claim_error is not None:
         return jsonify(claim_error[0]), claim_error[1]
     return jsonify(review_case.to_dict())
@@ -203,7 +213,7 @@ def resolve_case(case_id: int):
     except LookupError:
         return jsonify({"error": "Case not found."}), 404
 
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     if review_case.status != "claimed" or review_case.claimed_by != agent:
         return jsonify({"error": "Case can only be resolved by current claimant."}), 409
     if review_case.lease_expires_at is None or review_case.lease_expires_at <= now:
@@ -248,7 +258,7 @@ def claim_next_case():
         return jsonify({"error": str(exc)}), 400
 
     for _ in range(2):
-        now = datetime.now(timezone.utc)
+        now = naive_utc_now()
         next_case = db.session.execute(
             select(ReviewCase)
             .where(

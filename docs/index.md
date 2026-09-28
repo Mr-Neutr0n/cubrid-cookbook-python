@@ -21,13 +21,21 @@ Runnable Python examples and production-shaped application templates for CUBRID 
 | pycubrid fundamentals | 16 | `make verify` goldens (CI, CUBRID 11.2 + 11.4) |
 | SQLAlchemy fundamentals | 7 | `make verify` goldens (CI) |
 | pandas fundamentals | 6 | `make verify` goldens (CI) |
-| Flask / FastAPI templates | 11 + 12 | pytest suites (manual runs) |
+| Flask / FastAPI templates | 11 + 12 | pytest suites (CI on `main` + nightly, CUBRID 11.2 + 11.4) |
 | Streamlit / Django templates | 5 + 1 | manual runs (dashboard ships a compose demo) |
 | Celery / batch-ETL templates | 1 + 5 | manual runs (ETL goldens in `expected/`) |
 | Async · Alembic · JSON · isolation | 4 | `make verify` goldens (CI) |
 | Migration, performance, pitfalls | topic guides | docs |
 
 Numbers and status per [SUPPORT_MATRIX.md](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/SUPPORT_MATRIX.md).
+
+Smoke tests keep the selected published driver versions fixed through all
+dependency installs and verify versions and package-index origin before reporting
+the packages exercised. Upstream release dispatches install the exact requested
+version, wait within a bounded publication budget, and fail if it remains
+unavailable. A final summary records request, actual versions/origins, verification
+commit, server version and result even when validation fails. See the
+[release smoke dependency contract](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/CONTRIBUTING.md#release-smoke-dependencies).
 
 ## Try the one-command dashboard
 

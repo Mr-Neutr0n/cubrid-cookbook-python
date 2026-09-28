@@ -38,5 +38,13 @@ curl -X DELETE http://localhost:5000/api/products/1
 ## Test
 
 ```bash
+pip install pytest
 python -m pytest tests/ -v
+```
+
+Tests use a temporary SQLite database by default. Set `CUBRID_TEST_URL` to run
+them against a live CUBRID instance:
+
+```bash
+CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb" python -m pytest tests/ -v
 ```

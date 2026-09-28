@@ -35,11 +35,15 @@ Docker로 CUBRID + FastAPI 앱을 5분 안에 띄웁니다.
 
 ```bash
 cd quickstart/5min-fastapi
-docker compose up -d
+docker compose up -d --wait cubrid
 pip install -r requirements.txt
 uvicorn app:app --reload
 # http://localhost:8000/docs 접속
 ```
+
+호스트에서 실행한 API는 기본적으로 `localhost`에 연결합니다 (`CUBRID_HOST`로 변경 가능).
+API와 데이터베이스를 모두 Docker에서 실행하려면 같은 디렉터리에서
+`docker compose up -d --build`를 사용하세요. Compose는 API에 `CUBRID_HOST=cubrid`를 설정합니다.
 
 ### 마이그레이션 가이드
 
@@ -58,7 +62,7 @@ Java JDBC → Python 마이그레이션을 실제 코드 나란히 비교로 제
 | [`django/`](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/templates/django) | CUBRID 위의 최소 Django 앱 |
 | [`async-worker/`](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/templates/async-worker) | Celery 백그라운드 작업 처리 |
 | [`batch-etl/`](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/templates/batch-etl) | Pandas 데이터 파이프라인 |
-| [`ai-agent/`](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/templates/ai-agent) | AI 에이전트 상태 저장소 + MCP 도구 체인 + RAG 메타데이터 |
+| [`ai-agent/`](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/templates/ai-agent) | AI 에이전트 상태 저장소 + MCP 도구 체인 + RAG 메타데이터 (실제 DB로 검증하는 스크립트 5개) |
 | [`dashboard/`](https://github.com/cubrid-lab/cubrid-cookbook-python/tree/main/templates/dashboard) | Streamlit 인터랙티브 대시보드 (`docker compose up` 원커맨드 데모) |
 
 ### 성능
@@ -156,6 +160,18 @@ docker compose up -d
 ## 기여
 
 PR 환영합니다! 각 예제는 자립적으로 실행 가능해야 합니다. [`CONTRIBUTING.md`](https://github.com/cubrid-lab/cubrid-cookbook-python/blob/main/CONTRIBUTING.md) 참고.
+
+### 첫 기여
+
+CUBRID가 처음이신가요? 작업하려는 내용에 맞는 저장소를 선택하세요:
+
+- 문서와 실행 가능한 예제: [cubrid-cookbook-python](https://github.com/cubrid-lab/cubrid-cookbook-python)
+- 순수 Python 드라이버 수정: [pycubrid](https://github.com/cubrid-lab/pycubrid)
+- SQLAlchemy 방언 수정: [sqlalchemy-cubrid](https://github.com/cubrid-lab/sqlalchemy-cubrid)
+
+대부분의 첫 이슈는 CONTRIBUTING.md의 오프라인 검사만으로 개발하고 테스트할 수 있습니다 — Docker나 CUBRID 서버가 필요 없습니다. 실제 CUBRID 검증은 CI와 메인테이너가 완료할 수 있습니다.
+
+열려 있는 [`good first issue`](https://github.com/cubrid-lab/cubrid-cookbook-python/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22+no%3Aassignee) 작업을 둘러보세요.
 
 ## 고지
 

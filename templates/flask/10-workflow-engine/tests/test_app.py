@@ -9,12 +9,12 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(database_config):
     from app import create_app  # pyright: ignore[reportImplicitRelativeImport]
 
     app = create_app(
         {
-            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path}/test.db",
+            **database_config,
             "TESTING": True,
         }
     )

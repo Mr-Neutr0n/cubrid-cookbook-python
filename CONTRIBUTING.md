@@ -3,6 +3,9 @@
 Thank you for your interest in contributing! This document provides guidelines
 and instructions for contributing to the project.
 
+Use English for GitHub issues, pull requests, and comments; localized documentation
+is welcome, and no specific tool is required.
+
 ## Table of Contents
 
 - [Development Workflow](#development-workflow)
@@ -18,6 +21,12 @@ and instructions for contributing to the project.
 All non-trivial work follows the cubrid-lab 4-phase cycle. Every change to an
 example ships its implementation, its tests, and its docs **together** — code
 without doc updates is considered incomplete.
+
+Contributors provide the motivation, implementation, tests, and matching docs.
+Maintainers coordinate project-specific Oracle/Codex reviews, agent tooling,
+labels, release classification, and integration. You do not need to install an
+agent or Oracle tool to contribute; ordinary design discussion and PR review
+provide the handoff to those maintainer responsibilities.
 
 1. **Design review** — Validate the approach and API surface before building.
 2. **Implementation** — Build the feature/fix with tests, following existing patterns.
@@ -40,6 +49,26 @@ python3 scripts/check_docs_sync.py
 
 Intentional coverage exceptions live in `scripts/docs-sync-allowlist.txt` with a
 recorded reason.
+
+### Offline contributor checks
+
+From the repository root, install the existing quickstart dependencies and the
+small offline test toolchain in a virtual environment:
+
+```bash
+python3 -m pip install -r quickstart/5min-fastapi/requirements.txt pytest httpx sqlalchemy ruff==0.16.4
+make check
+```
+
+`make check` runs Ruff, documentation and golden-coverage checks, output-normalizer
+tests, mocked quickstart and AI-agent tests, release dependency guards, and fake
+Make/Compose regression tests. `make test-offline` runs just the offline test
+suites. Each suite uses its own process to avoid conflicting recipe module names.
+These checks require no database and do not prove live CUBRID compatibility;
+run the relevant example or `make verify` against CUBRID for that evidence.
+CI runs the same `make check` command. Both required live smoke matrix jobs also
+run the Make/readiness regression guards before selecting driver dependencies.
+The repository is an example collection, so `pip install -e .` is not supported.
 
 ---
 
@@ -66,16 +95,26 @@ docs/                # Internal docs (PRD, agent playbook)
 
 ```bash
 # Start CUBRID
-docker compose up -d
+make up
 
 # Example: run a FastAPI template
-cd templates/api-service-fastapi
+cd templates/api-service-fastapi/recipes/01-basic-crud
 pip install -r requirements.txt
-uvicorn app:app --reload
+uvicorn main:app --reload
 
-# Example: run a fundamental
+# After stopping Uvicorn, return to the repository root for a fundamental
+cd ../../../..
 python fundamentals/pycubrid/01_connect.py
 ```
+
+`make up` starts Compose, then waits up to 120 seconds for the existing
+in-container `csql` query to succeed. Each probe and failure diagnostic has a
+5-second limit. To adjust these waits, use `UP_TIMEOUT`, `UP_PROBE_TIMEOUT`, and
+`UP_INTERVAL`, for example `make up UP_TIMEOUT=180`. Image pull/start time occurs
+before the readiness deadline. This query checks the database inside the
+container; it does not verify the driver's CAS connection. On failure the
+command exits nonzero and prints bounded Compose status/log diagnostics, leaving
+the containers and data available for inspection.
 
 ### Golden Verification
 
@@ -85,11 +124,55 @@ which discovers each committed `<dir>/expected/<name>.expected`, runs the matchi
 result against that golden file. When you add a one-shot example, capture its
 golden output so CI can guard it.
 
+`make verify` checks all goldens by default; use `VERIFY_PATHS=<directory>` to
+select example roots. Empty/missing roots, zero golden targets, a missing script
+for an expected file, discovery/read errors, and failed scripts or normalizers
+all fail the command. A successful summary has at least one pass and no failures
+or skips. Ordinary recipe failures are collected so the remaining selected
+recipes still produce diagnostics.
+
 This is enforced: `scripts/check_expected_coverage.py` (run by `make verify` and
 the smoke-test workflow) fails if any runnable `<dir>/*.py` inside a directory
 that owns an `expected/` folder has no matching `expected/<name>.expected`
 golden. To opt a script out, add it to `scripts/verify_exclusions.txt` with a
 reason — but prefer making the example deterministic and adding a golden.
+
+#### Release smoke dependencies
+
+The smoke job selects `pycubrid` and `sqlalchemy-cubrid` from the package index,
+then freezes their exact installed versions with `scripts/release_smoke.py`.
+Every subsequent dependency install uses these constraints, including example
+requirements, AI-agent and framework test dependencies, and the MCP server. An incompatible
+requirement fails the job instead of replacing a selected driver.
+
+After all installs, the job checks the driver versions and package-index origin
+before recording **Tested upstream versions** and running examples or suites.
+The AI-agent suite runs twice only after this final verification, on PRs too.
+A same-version VCS or local install is also rejected. Golden-backed requirements
+must use published driver releases; the `pycubrid`, `connect`, and `orm-basics`
+fundamentals require the current `>=1.7,<2` release line.
+
+Release dispatches accept `pycubrid`, `sqlalchemy-cubrid`, or `cubrid-mcp-server`
+with a canonical `vMAJOR.MINOR.PATCH` ref, matching the upstream dispatch format.
+The job reads the event JSON, validates the request before installation, and
+installs that exact release from PyPI. Publication is retried up to six times,
+with a 60-second installer timeout and 10 seconds between attempts; the maximum
+requested-install budget is 410 seconds. An unavailable release fails explicitly.
+The requested package is pinned through later installs and checked again for its
+exact version and package-index origin before tests.
+
+The intentional MCP git-tag fallback applies only when MCP is not the requested
+package. Its actual origin remains visible in the result summary. Requested
+releases always use the exact PyPI artifact. The final summary runs on failures
+too and includes the request, installed versions/origins, verification commit,
+actual CUBRID server version when available, and job result. This handles the
+tag/publication race in the receiver; upstream notification timing is unchanged.
+
+Run the smoke dependency guards without a database or network:
+
+```bash
+python3 -m unittest discover -s tests -p 'test_release*.py' -v
+```
 
 #### Excluded from golden verification
 
@@ -167,13 +250,40 @@ ruff format .
 - Keep PRs focused — one example or fix per PR.
 - Write a clear title and description explaining _what_ and _why_.
 - Reference any related issues (e.g., `Fixes #42`).
-- Include output demonstrating the example works.
+- Record commands actually executed, their results, and any checks not run with
+  the reason. Optional AI/tool review is separate evidence and does not replace
+  lint, tests, documentation checks, or live compatibility validation.
+
+Behavior, SQL, installation, and compatibility changes need matching source docs
+in the same PR. If docs are genuinely unaffected, add a standalone, unfenced line
+such as `Docs: not needed - only regression test data changed` to the PR body.
+Use a standalone physical source line outside quoted/commented/code examples.
+A blank line or quoted blank line can end a preceding Markdown quote; ordinary
+prose before or after the reason does not require a blank paragraph separator.
+The docs gate rejects blank reasons, the literal `<reason>` placeholder, and
+markers shown only in quotes, comments, or fenced examples. The existing
+`docs-not-needed` label remains a maintainer-managed exception for this gate.
+
+If you need translation help, name the missing language and reason in the PR.
+This request does not bypass checks: Korean README synchronization remains
+required, while other community translation drift is advisory. Only explicit
+maintainer approval via the existing `translations-deferred` label skips that
+gate; maintainers record and own the follow-up.
+
+The shared documentation-lint and live-smoke callers use reviewed commit SHAs.
+Maintainers update them through a PR after verifying the upstream commit,
+workflow files and inputs, while retaining caller inputs, permissions and gates.
+The documentation scanner and configuration still download from upstream main;
+pinning the caller alone does not freeze those resources.
 
 ### Review Process
 
 - All PRs require at least one review before merge.
 - CI must pass (lint checks).
 - Examples must be tested against a live CUBRID instance.
+
+Explain unavailable local checks so maintainers can arrange validation. A reason
+or an AI review does not waive the CI or live checks required before merge.
 
 ---
 
@@ -188,6 +298,10 @@ When reporting a bug in an example, please include:
 - Steps to reproduce
 
 For new example requests, describe the use case and framework.
+
+Describe urgency and the expected scope when useful. Maintainers or triagers
+assign/create the canonical `priority:` and `size:` GitHub labels; reporters do
+not need label permissions.
 
 ---
 

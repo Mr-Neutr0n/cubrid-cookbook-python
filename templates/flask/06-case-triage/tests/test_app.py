@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import TypedDict, cast
 
 import httpx
@@ -18,17 +18,18 @@ if str(PROJECT_ROOT) not in sys.path:
 import importlib
 
 create_app = importlib.import_module("app").create_app
+naive_utc_now = importlib.import_module("app").naive_utc_now
 db = importlib.import_module("database").db
 _models = importlib.import_module("models")
 ReviewCase = _models.ReviewCase
 
 
 @pytest.fixture
-def app(tmp_path: Path):
+def app(database_config: dict[str, object]):
     return create_app(
         {
             "TESTING": True,
-            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'test.db'}",
+            **database_config,
             "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         }
     )
@@ -118,7 +119,7 @@ def test_claim_expired_lease(httpx_client: httpx.Client, app: Flask) -> None:
         _ = db.session.execute(
             update(ReviewCase)
             .where(ReviewCase.id == created_case["id"])
-            .values(lease_expires_at=datetime.now(timezone.utc) - timedelta(minutes=1))
+            .values(lease_expires_at=naive_utc_now() - timedelta(minutes=1))
         )
         db.session.commit()
 

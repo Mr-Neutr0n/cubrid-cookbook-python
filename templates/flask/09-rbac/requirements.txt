@@ -2,3 +2,5 @@ flask>=3.0.0
 flask-sqlalchemy>=3.1.1
 sqlalchemy>=2.0
 pytest>=8.0.0
+pycubrid>=1.7,<2
+sqlalchemy-cubrid>=1.7,<2

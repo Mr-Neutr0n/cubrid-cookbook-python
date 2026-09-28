@@ -25,11 +25,11 @@ Category = _models.Category
 
 
 @pytest.fixture
-def app(tmp_path: Path):
+def app(database_config: dict[str, object]):
     return create_app(
         {
             "TESTING": True,
-            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'test.db'}",
+            **database_config,
             "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         }
     )

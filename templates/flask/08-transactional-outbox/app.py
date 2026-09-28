@@ -21,6 +21,16 @@ db = importlib.import_module("database").db
 outbox_bp = Blueprint("outbox", __name__, url_prefix="/api")
 
 
+def naive_utc_now() -> datetime:
+    """Return the current UTC time without tzinfo.
+
+    The DateTime columns store naive UTC values, so everything read back from the
+    database is naive. Comparing that with an aware datetime raises TypeError, so
+    any "now" compared against these columns must be naive too.
+    """
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 def _json_payload() -> Mapping[str, object]:
     payload_value = request.get_json(silent=True)
     if isinstance(payload_value, dict):
@@ -70,7 +80,7 @@ def send_invoice(invoice_id: int):
     if invoice.status == "sent":
         return jsonify({"error": "Invoice already sent."}), 409
 
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     invoice.status = "sent"
     invoice.sent_at = now
 
@@ -116,7 +126,7 @@ def lease_outbox_messages():
     if not processor_id:
         return jsonify({"error": "processor_id is required"}), 400
 
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     lease_until = now + timedelta(minutes=5)
     messages = (
         db.session.execute(
@@ -178,7 +188,7 @@ def acknowledge_outbox_message(message_id: int):
     if message is None:
         return jsonify({"error": "Outbox message not found."}), 404
 
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     if message.leased_until is None or message.leased_until <= now:
         return jsonify({"error": "Outbox message is not currently leased."}), 409
     if message.leased_by != processor_id:
@@ -211,7 +221,7 @@ def fail_outbox_message(message_id: int):
     if message is None:
         return jsonify({"error": "Outbox message not found."}), 404
 
-    now = datetime.now(timezone.utc)
+    now = naive_utc_now()
     if message.leased_until is None or message.leased_until <= now:
         return jsonify({"error": "Outbox message is not currently leased."}), 409
     if message.leased_by != processor_id:

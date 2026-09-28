@@ -3,9 +3,12 @@
 Demonstrates:
 - SET TIME ZONE to pin the session zone (makes *LTZ values deterministic)
 - DATETIMETZ: stores an explicit zone, read back as a tz-aware datetime
-- DATETIMELTZ: stored in UTC; pycubrid materializes native reads as UTC-aware
-  (+00:00) datetimes. Server-side formatting (TO_CHAR) is the path for rendering
-  in the pinned session zone.
+- DATETIMELTZ: stored as an absolute instant; the server returns it in the
+  session time zone, so native reads come back aware in the pinned zone
+  (+09:00 here). The same instant reads as +00:00 in a UTC session.
+- The session zone survives commit() on pycubrid >= 1.8.0 (#468/#472). On
+  1.7.x a commit silently reconnected and dropped it, so reads after a commit
+  fell back to the server default zone (UTC in the cubrid/cubrid images).
 - Server-side TO_CHAR rendering with the TZR (zone-region) format element
 
 Note on TIMESTAMPTZ / TIMESTAMPLTZ:
@@ -39,6 +42,7 @@ def get_connection():
 
 def pin_session_zone(cursor):
     # Session-scoped: makes DATETIMELTZ rendering independent of the server's OS zone.
+    # Re-applying it after a commit is only needed on pycubrid < 1.8.0.
     cursor.execute(f"SET TIME ZONE '{SESSION_TZ}'")
     print(f"✓ Session time zone pinned to '{SESSION_TZ}'")
 
@@ -80,8 +84,8 @@ def seed_events(cursor):
 
 
 def read_native(cursor):
-    # DATETIMETZ keeps its explicit zone; DATETIMELTZ comes back UTC-aware (+00:00)
-    # from the driver, not in the session zone. Use TO_CHAR server-side for that.
+    # DATETIMETZ keeps its explicit zone; DATETIMELTZ comes back aware in the
+    # session zone (Asia/Seoul, +09:00), still the same instant as stored.
     cursor.execute("SELECT id, label, at_tz, at_ltz FROM cookbook_events ORDER BY id")
     print("\nNative tz-aware datetimes (DATETIMETZ, DATETIMELTZ):")
     for event_id, label, at_tz, at_ltz in cursor.fetchall():

@@ -26,6 +26,13 @@ python run.py
 python -m pytest tests/ -v
 ```
 
+Tests use a temporary SQLite database by default. Set `CUBRID_TEST_URL` to run
+them against a live CUBRID instance:
+
+```bash
+CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb" python -m pytest tests/ -v
+```
+
 ## Notes
 
 - Role inheritance traverses parent chains to collect effective permissions.

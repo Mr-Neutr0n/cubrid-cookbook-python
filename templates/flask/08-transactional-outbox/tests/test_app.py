@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from typing import Any, cast
 
 import httpx
@@ -18,17 +18,18 @@ if str(PROJECT_ROOT) not in sys.path:
 import importlib
 
 create_app = importlib.import_module("app").create_app
+naive_utc_now = importlib.import_module("app").naive_utc_now
 _models = importlib.import_module("models")
 OutboxMessage = _models.OutboxMessage
 db = importlib.import_module("database").db
 
 
 @pytest.fixture
-def app(tmp_path: Path):
+def app(database_config: dict[str, object]):
     return create_app(
         {
             "TESTING": True,
-            "SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path / 'test.db'}",
+            **database_config,
             "SQLALCHEMY_TRACK_MODIFICATIONS": False,
         }
     )
@@ -138,7 +139,7 @@ def test_fail_three_times_dead_letters(app: Flask, httpx_client: httpx.Client) -
         db.session.execute(
             update(OutboxMessage)
             .where(OutboxMessage.id == msg["id"])
-            .values(next_attempt_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+            .values(next_attempt_at=naive_utc_now() - timedelta(seconds=1))
         )
         db.session.commit()
 
@@ -156,7 +157,7 @@ def test_fail_three_times_dead_letters(app: Flask, httpx_client: httpx.Client) -
         db.session.execute(
             update(OutboxMessage)
             .where(OutboxMessage.id == msg["id"])
-            .values(next_attempt_at=datetime.now(timezone.utc) - timedelta(seconds=1))
+            .values(next_attempt_at=naive_utc_now() - timedelta(seconds=1))
         )
         db.session.commit()
 

@@ -20,3 +20,17 @@ Test: `python3 -m pytest tests/ -v`
 - Reservation uses conditional `UPDATE ... WHERE version = ?` and stock check.
 - Quantity updates use SQL expressions (`reserved_qty +/- quantity`, `committed_qty + quantity`).
 - Expiry sweep isolates row failures with `db.session.begin_nested()`.
+
+## Test
+
+```bash
+pip install -r requirements.txt pytest
+python -m pytest tests/ -v
+```
+
+Tests use a temporary SQLite database by default. Set `CUBRID_TEST_URL` to run
+them against a live CUBRID instance:
+
+```bash
+CUBRID_TEST_URL="cubrid+pycubrid://dba@localhost:33000/testdb" python -m pytest tests/ -v
+```

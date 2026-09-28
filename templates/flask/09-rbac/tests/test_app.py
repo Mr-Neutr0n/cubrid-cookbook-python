@@ -12,9 +12,9 @@ if str(PROJECT_ROOT) not in sys.path:
 
 
 @pytest.fixture
-def client(tmp_path):
+def client(database_config):
     create_app = importlib.import_module("app").create_app
-    app = create_app({"SQLALCHEMY_DATABASE_URI": f"sqlite:///{tmp_path}/test.db", "TESTING": True})
+    app = create_app({**database_config, "TESTING": True})
     with app.test_client() as c:
         yield c
 
