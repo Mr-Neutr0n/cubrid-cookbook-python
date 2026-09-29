@@ -79,7 +79,8 @@ when a row no longer matches the repository. Verification is split:
 
 - **Golden-backed recipes** carry stdout goldens (`expected/*.expected`) and are
   checked by `make verify` in CI on **CUBRID 11.2 and 11.4 / Python 3.12**
-  (fundamentals, migration, the SQLAlchemy quickstart, and the batch-etl template).
+  (fundamentals, migration, the SQLAlchemy quickstart, the batch-etl template, and
+  the reserved-word DDL check behind `pitfalls/`).
 - The **Flask and FastAPI** recipes are covered by pytest suites that the smoke
   job runs against its live CUBRID container on **11.2 and 11.4** for every push
   to `main`, nightly, and on manual runs (pull requests skip them to stay fast).
@@ -109,6 +110,7 @@ when a row no longer matches the repository. Verification is split:
 | Java-to-Python migration | 5 | `make verify` (CI, 11.2 + 11.4) |
 | SQLAlchemy quickstart | 1 | `make verify` (CI, 11.2 + 11.4) |
 | Pandas batch-etl template | 5 | `make verify` (CI, 11.2 + 11.4) |
+| Pitfalls: reserved-word DDL | 1 | `make verify` (CI, 11.2 + 11.4) |
 | Flask templates | 11 | pytest (CI on `main` + nightly, 11.2 + 11.4) |
 | FastAPI templates | 12 | pytest (CI on `main` + nightly, 11.2 + 11.4) |
 | FastAPI quickstart | 1 | offline pytest (PR CI, mocked DB-API) |
@@ -116,7 +118,7 @@ when a row no longer matches the repository. Verification is split:
 | Streamlit templates | 5 | manual run |
 | Django template | 1 | manual run |
 | Celery async-worker template | 1 | manual run |
-| **Total** | **101** | 65 golden-backed via `make verify` on 11.2 + 11.4; Flask and FastAPI pytest suites in CI on `main` + nightly; AI agent suite on every smoke run; rest run manually |
+| **Total** | **102** | 66 golden-backed via `make verify` on 11.2 + 11.4; Flask and FastAPI pytest suites in CI on `main` + nightly; AI agent suite on every smoke run; rest run manually |
 
 ## Known Limitations by Version
 

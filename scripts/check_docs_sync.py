@@ -10,7 +10,9 @@ Two checks are performed for every example directory (an immediate subdirectory
 of one of the category roots):
 
 1. README reference (BLOCKING): the example's ``<category>/<name>`` path must
-   appear somewhere in README.md. A missing reference fails the gate.
+   appear somewhere in README.md and in llms.txt (the index AI assistants
+   read). A missing reference fails the gate, so a new example cannot be left
+   out of the AI guidance (issue #150, where ``templates/ai-agent`` was).
 2. Smoke coverage (WARNING): the example should ship an ``expected/`` directory
    (``make verify`` golden files) or a ``tests/`` directory (pytest). Examples
    without either are reported as warnings and do not fail the gate, so the
@@ -114,10 +116,12 @@ def find_untested(repo_root: Path, examples: list[str], allowlist: set[str]) -> 
 def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     readme_text = (repo_root / "README.md").read_text(encoding="utf-8")
+    llms_text = (repo_root / "llms.txt").read_text(encoding="utf-8")
     allowlist = load_allowlist(repo_root / "scripts" / "docs-sync-allowlist.txt")
 
     examples = discover_examples(repo_root)
     undocumented = find_undocumented(examples, readme_text)
+    missing_from_llms = find_undocumented(examples, llms_text)
     untested = find_untested(repo_root, examples, allowlist)
 
     print(f"Scanned {len(examples)} example directories across {len(CATEGORY_ROOTS)} categories.")
@@ -134,9 +138,17 @@ def main() -> int:
             print(f"  - {ex}")
         print("\nDocument each example in README.md (Project Structure and the relevant table).")
         print("This gate enforces the 4-phase workflow: code without doc updates is incomplete.")
+
+    if missing_from_llms:
+        print("\nERROR: examples missing from llms.txt:")
+        for ex in missing_from_llms:
+            print(f"  - {ex}")
+        print("\nList each example in llms.txt so AI assistants see the whole catalog.")
+
+    if undocumented or missing_from_llms:
         return 1
 
-    print("\nOK: every example directory is referenced in README.md.")
+    print("\nOK: every example directory is referenced in README.md and llms.txt.")
     return 0
 
 
