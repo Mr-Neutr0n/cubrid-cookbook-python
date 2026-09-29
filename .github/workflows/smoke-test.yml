@@ -28,9 +28,18 @@ on:
         type: string
         default: ""
 
+# Release verifications (repository_dispatch, or workflow_dispatch pinned to a
+# package) get their own group per event/package/version and are never
+# cancelled, so a push to main cannot cancel an in-flight release check.
+# Expression-only use of request fields; run: steps read them from the event JSON.
 concurrency:
-  group: smoke-tests-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    smoke-tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{
+    github.event.inputs.package || github.event.client_payload.package || 'none' }}-${{
+    github.event.inputs.version || github.event.client_payload.ref || 'none' }}
+  cancel-in-progress: >-
+    ${{ !(github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch'
+    && github.event.inputs.package != 'latest')) }}
 
 # Least privilege: this workflow only reads the repo and runs untrusted
 # PR-authored example code via `make verify`. A read-only token removes the

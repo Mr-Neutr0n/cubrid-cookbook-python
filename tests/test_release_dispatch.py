@@ -320,6 +320,7 @@ class ReleaseDispatchTests(unittest.TestCase):
             ("pycubrid --help", "1.7.1"),
             ("latest", "1.7.1"),
             ("", "v1.7.1"),
+            (None, "1.7.1"),
             ("pycubrid", ""),
             ("pycubrid", None),
             ("pycubrid", "latest"),
@@ -334,9 +335,11 @@ class ReleaseDispatchTests(unittest.TestCase):
             ("pycubrid", "1.7.1;echo hello"),
             ("pycubrid", "$(echo 1.7.1)"),
         ]
-        for package, version in invalid:
-            with self.subTest(package=package, version=version):
-                self.manual(package, version)
+        cases = [{"inputs": {"package": p, "version": v}} for p, v in invalid]
+        cases += [{"inputs": ["pycubrid", "1.7.1"]}, {"inputs": "pycubrid==1.7.1"}, []]
+        for event in cases:
+            with self.subTest(event=event):
+                self.event.write_text(json.dumps(event))
                 with (
                     patch.object(smoke.subprocess, "run") as install,
                     patch.object(smoke.subprocess, "check_call") as bootstrap,
@@ -347,6 +350,13 @@ class ReleaseDispatchTests(unittest.TestCase):
                 install.assert_not_called()
                 bootstrap.assert_not_called()
                 sleep.assert_not_called()
+
+    def test_manual_version_without_package_names_the_problem(self) -> None:
+        for package in ("latest", "", None):
+            with self.subTest(package=package):
+                self.manual(package, "1.8.0")
+                with self.assertRaisesRegex(ValueError, "requires a non-latest package"):
+                    smoke.read_request("workflow_dispatch", self.event)
 
     def test_manual_release_retries_delayed_publication_then_fails_bounded(self) -> None:
         self.manual()
@@ -413,9 +423,22 @@ class ReleaseDispatchTests(unittest.TestCase):
             self.assertIn(f"          - {option}\n", manual)
         self.assertIn("default: latest", manual)
         self.assertIn("type: choice", manual)
-        # The script reads inputs from GITHUB_EVENT_PATH, like repository_dispatch payloads.
-        self.assertNotIn("inputs.", workflow)
-        self.assertNotIn("client_payload", workflow)
+        # Request fields may key the concurrency group, but job steps must read them
+        # from GITHUB_EVENT_PATH (via release_smoke.py), never via interpolation.
+        jobs = workflow[workflow.index("\njobs:") :]
+        self.assertNotIn("inputs.", jobs)
+        self.assertNotIn("client_payload", jobs)
+        header = workflow[: workflow.index("\njobs:")]
+        concurrency = header[header.index("\nconcurrency:") :]
+        for key in (
+            "github.event_name",
+            "github.event.inputs.package || github.event.client_payload.package || 'none'",
+            "github.event.inputs.version || github.event.client_payload.ref || 'none'",
+            "github.event_name == 'repository_dispatch'",
+            "github.event.inputs.package != 'latest'",
+        ):
+            self.assertIn(key, " ".join(concurrency.split()))
+        self.assertNotIn("cancel-in-progress: true", concurrency)
 
 
 if __name__ == "__main__":

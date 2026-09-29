@@ -46,8 +46,10 @@ def read_request(event_name: str, event_path: Path | None) -> dict[str, str] | N
         raise ValueError("Manual release inputs must be an object")
     package = inputs.get("package")
     version = inputs.get("version")
-    if package in (None, "", MANUAL_LATEST) and version in (None, ""):
-        return None
+    if package in (None, "", MANUAL_LATEST):
+        if version in (None, ""):
+            return None
+        raise ValueError("Manual release version requires a non-latest package")
     if package not in PACKAGES:
         raise ValueError("Manual release package must be one of " + ", ".join(PACKAGES))
     if not isinstance(version, str) or not version:
