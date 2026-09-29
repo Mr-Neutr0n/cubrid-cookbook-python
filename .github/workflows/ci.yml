@@ -47,6 +47,8 @@ jobs:
           python-version: "3.12"
       - name: Run doctests
         run: python3 -m doctest scripts/check_docs_sync.py -v
+      - name: Run pitfalls discovery unit tests
+        run: python3 -m unittest discover -s tests -p 'test_docs_sync.py' -v
       - name: Check examples are documented
         run: python3 scripts/check_docs_sync.py
 

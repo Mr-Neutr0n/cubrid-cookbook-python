@@ -28,18 +28,31 @@ import sys
 from pathlib import Path
 
 # Category roots whose immediate subdirectories are individual examples.
-# ``pitfalls`` is intentionally excluded: it is a single README, not a set of
-# example subdirectories.
 CATEGORY_ROOTS = (
     "quickstart",
     "migration",
     "templates",
     "performance",
     "fundamentals",
+    "pitfalls",
 )
 
 # Directory names that are never examples even when they sit under a category root.
 _IGNORED_DIRS = {"__pycache__", ".pytest_cache", "expected", "tests"}
+
+# Category roots whose immediate subdirectories are only treated as examples
+# when they contain example code (a ``*.py`` file anywhere inside). ``pitfalls``
+# is mostly a single README landing page (``pitfalls/README.md``, already
+# excluded because it is a file, not a directory); #181 added a real recipe
+# subdirectory, ``pitfalls/reserved-words/``, so this keeps that subdirectory
+# covered by the gate while exempting any future README-only or non-code
+# subdirectory from the same treatment.
+_REQUIRE_CODE_ROOTS = {"pitfalls"}
+
+
+def _has_example_code(directory: Path) -> bool:
+    """Return True if ``directory`` contains a ``.py`` file anywhere inside."""
+    return next(directory.rglob("*.py"), None) is not None
 
 
 def discover_examples(repo_root: Path) -> list[str]:
@@ -47,15 +60,40 @@ def discover_examples(repo_root: Path) -> list[str]:
 
     Only immediate subdirectories of each category root are treated as examples;
     nested recipe folders (for example ``templates/flask/01-basic-crud``) are not.
+    For roots in ``_REQUIRE_CODE_ROOTS`` (currently ``pitfalls``), a subdirectory
+    only counts as an example when it contains a ``.py`` file, so a README-only
+    landing page stays exempt.
+
+    >>> import tempfile
+    >>> tmp = Path(tempfile.mkdtemp())
+    >>> pitfalls = tmp / "pitfalls"
+    >>> pitfalls.mkdir()
+    >>> _ = (pitfalls / "README.md").write_text("landing page only")
+    >>> discover_examples(tmp)
+    []
+    >>> example = pitfalls / "reserved-words"
+    >>> example.mkdir()
+    >>> _ = (example / "01_reserved_words.py").write_text("# recipe")
+    >>> discover_examples(tmp)
+    ['pitfalls/reserved-words']
+    >>> notes = pitfalls / "notes"
+    >>> notes.mkdir()
+    >>> _ = (notes / "README.md").write_text("no example code here")
+    >>> discover_examples(tmp)
+    ['pitfalls/reserved-words']
     """
     examples: list[str] = []
     for category in CATEGORY_ROOTS:
         category_dir = repo_root / category
         if not category_dir.is_dir():
             continue
+        require_code = category in _REQUIRE_CODE_ROOTS
         for child in sorted(category_dir.iterdir()):
-            if child.is_dir() and child.name not in _IGNORED_DIRS:
-                examples.append(f"{category}/{child.name}")
+            if not child.is_dir() or child.name in _IGNORED_DIRS:
+                continue
+            if require_code and not _has_example_code(child):
+                continue
+            examples.append(f"{category}/{child.name}")
     return examples
 
 
