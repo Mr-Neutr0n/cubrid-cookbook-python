@@ -9,10 +9,37 @@ on:
   repository_dispatch:
     types: [upstream-released]
   workflow_dispatch:
+    # Manual release fallback when the upstream dispatch token is unavailable.
+    # scripts/release_smoke.py reads and validates these values from the event
+    # JSON (same path as repository_dispatch); they never enter shell code.
+    # Leave both at their defaults for an ordinary latest-release smoke run.
+    inputs:
+      package:
+        description: "Released package to verify exactly (latest = no pinned release)"
+        type: choice
+        default: latest
+        options:
+          - latest
+          - pycubrid
+          - sqlalchemy-cubrid
+          - cubrid-mcp-server
+      version:
+        description: "Exact release to verify, MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH (required with a package)"
+        type: string
+        default: ""
 
+# Release verifications (repository_dispatch, or workflow_dispatch pinned to a
+# package) get their own group per event/package/version and are never
+# cancelled, so a push to main cannot cancel an in-flight release check.
+# Expression-only use of request fields; run: steps read them from the event JSON.
 concurrency:
-  group: smoke-tests-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    smoke-tests-${{ github.workflow }}-${{ github.ref }}-${{ github.event_name }}-${{
+    github.event.inputs.package || github.event.client_payload.package || 'none' }}-${{
+    github.event.inputs.version || github.event.client_payload.ref || 'none' }}
+  cancel-in-progress: >-
+    ${{ !(github.event_name == 'repository_dispatch' || (github.event_name == 'workflow_dispatch'
+    && github.event.inputs.package != 'latest')) }}
 
 # Least privilege: this workflow only reads the repo and runs untrusted
 # PR-authored example code via `make verify`. A read-only token removes the
@@ -149,8 +176,10 @@ jobs:
       - name: Select released drivers
         timeout-minutes: 10
         run: |
-          # Reads the event JSON directly; untrusted payload fields never enter shell code.
-          # Requested releases get six bounded PyPI attempts, with no artifact fallback.
+          # Reads the event JSON directly; untrusted payload fields and manual
+          # inputs never enter shell code. Requested releases (repository_dispatch
+          # or a pinned workflow_dispatch) get six bounded PyPI attempts, with no
+          # artifact or latest-release fallback.
           python scripts/release_smoke.py select \
             --constraints "$RUNNER_TEMP/release-constraints.txt"
 

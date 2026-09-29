@@ -14,23 +14,54 @@ from pathlib import Path
 
 DRIVERS = ("pycubrid", "sqlalchemy-cubrid")
 PACKAGES = (*DRIVERS, "cubrid-mcp-server")
+MANUAL_LATEST = "latest"  # workflow_dispatch default: no pinned release.
 RELEASE_TAG = re.compile(r"v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)")
 
 
 def read_request(event_name: str, event_path: Path | None) -> dict[str, str] | None:
-    """Validate the format used by the three upstream release dispatchers."""
-    if event_name != "repository_dispatch":
+    """Validate an upstream release dispatch or a pinned manual release run.
+
+    Both sources are read from the event JSON, so request fields never enter shell code.
+    A manual run without a package keeps the ordinary latest-release smoke behavior.
+    """
+    if event_name not in ("repository_dispatch", "workflow_dispatch"):
         return None
     if event_path is None or not event_path.is_file():
-        raise ValueError("Release dispatch requires an event JSON file")
+        raise ValueError("Release request requires an event JSON file")
     event = json.loads(event_path.read_text(encoding="utf-8"))
-    payload = event.get("client_payload") if isinstance(event, dict) else None
-    if not isinstance(payload, dict) or payload.get("package") not in PACKAGES:
-        raise ValueError("Release dispatch package is not in the upstream allowlist")
-    ref = payload.get("ref")
-    if not isinstance(ref, str) or RELEASE_TAG.fullmatch(ref) is None:
-        raise ValueError("Release dispatch ref must be canonical vMAJOR.MINOR.PATCH")
-    return {"package": payload["package"], "ref": ref, "version": ref[1:]}
+    if not isinstance(event, dict):
+        raise ValueError("Release request event JSON must be an object")
+    if event_name == "repository_dispatch":
+        payload = event.get("client_payload")
+        if not isinstance(payload, dict) or payload.get("package") not in PACKAGES:
+            raise ValueError("Release dispatch package is not in the upstream allowlist")
+        ref = payload.get("ref")
+        if not isinstance(ref, str) or RELEASE_TAG.fullmatch(ref) is None:
+            raise ValueError("Release dispatch ref must be canonical vMAJOR.MINOR.PATCH")
+        return {"package": payload["package"], "ref": ref, "version": ref[1:]}
+    inputs = event.get("inputs")
+    if inputs is None:
+        inputs = {}
+    if not isinstance(inputs, dict):
+        raise ValueError("Manual release inputs must be an object")
+    package = inputs.get("package")
+    version = inputs.get("version")
+    if package in (None, "", MANUAL_LATEST):
+        if version in (None, ""):
+            return None
+        raise ValueError("Manual release version requires a non-latest package")
+    if package not in PACKAGES:
+        raise ValueError("Manual release package must be one of " + ", ".join(PACKAGES))
+    if not isinstance(version, str) or not version:
+        raise ValueError("Manual release run requires a version such as 1.8.0 or v1.8.0")
+    ref = version if version.startswith("v") else "v" + version
+    if RELEASE_TAG.fullmatch(ref) is None:
+        raise ValueError("Manual release version must be MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH")
+    return {"package": package, "ref": ref, "version": ref[1:]}
+
+
+def request_source(event_name: str) -> str:
+    return "manual release run" if event_name == "workflow_dispatch" else "release dispatch"
 
 
 def indexed_package(name: str) -> dict[str, str | None]:
@@ -188,13 +219,13 @@ def summary(
     """Report facts even if selection, publication or validation failed."""
     request = None
     valid_request = True
-    validation = "not a release dispatch"
+    validation = "none (latest releases; not a release verification)"
     try:
         request = read_request(event_name, event_path)
         if request is not None:
-            validation = request["package"] + " " + request["ref"]
+            validation = f"{request_source(event_name)}: {request['package']} {request['ref']}"
     except (ValueError, OSError) as error:
-        validation = f"invalid dispatch: {error}"
+        validation = f"invalid release request: {error}"
         valid_request = False
     verification = "unavailable"
     if state.is_file():
