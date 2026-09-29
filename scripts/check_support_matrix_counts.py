@@ -124,13 +124,19 @@ def check(root: Path, matrix: str) -> list[str]:
     golden_sum = 0
     for cells in rows:
         label = cells[0]
+        if len(cells) != 3:
+            errors.append(f"row {label!r}: expected 3 cells, found {len(cells)}")
+            continue
+        if label in seen or (label == "**Total**" and total_cells is not None):
+            errors.append(f"row {label!r} appears more than once")
+            continue
         if label == "**Total**":
             total_cells = cells
             continue
         try:
             claimed = int(cells[1])
-        except (IndexError, ValueError):
-            errors.append(f"row {label!r}: recipe count {cells[1:2]} is not a number")
+        except ValueError:
+            errors.append(f"row {label!r}: recipe count {cells[1]!r} is not a number")
             continue
         if label in GOLDEN_ROWS:
             actual = count_goldens(root, GOLDEN_ROWS[label])
@@ -157,9 +163,14 @@ def check(root: Path, matrix: str) -> list[str]:
             if (root / d).is_dir()
             for p in golden_paths(root / d)
         }
-        for p in goldens:
-            if p not in covered:
-                errors.append(f"golden {p.relative_to(root)} is not counted by any table row")
+        uncovered = [p for p in goldens if p not in covered]
+        for p in uncovered:
+            errors.append(f"golden {p.relative_to(root)} is not counted by any table row")
+        if not uncovered:
+            errors.append(
+                f"golden-backed rows count {golden_sum} goldens, repository has {len(goldens)}"
+                " (overlapping directories in GOLDEN_ROWS?)"
+            )
 
     if total_cells is None:
         errors.append("**Total** row is missing")

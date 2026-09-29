@@ -59,6 +59,31 @@ class SupportMatrixCountTests(unittest.TestCase):
         self.assertIn("row 'Django template' is missing from the table", errors)
         self.assertTrue(any(e.startswith("**Total** row says 99") for e in errors), errors)
 
+    def test_duplicate_and_short_rows_are_reported(self) -> None:
+        row = "| SQLAlchemy quickstart | 1 | `make verify` (CI, 11.2 + 11.4) |\n"
+        matrix = MATRIX.replace(row, row + row + "| Django template | 1 |\n", 1)
+        errors = counts.check(
+            ROOT, matrix.replace("| **Total** | **101** |", "| **Total** | **102** |")
+        )
+        self.assertIn("row 'SQLAlchemy quickstart' appears more than once", errors)
+        self.assertIn("row 'Django template': expected 3 cells, found 2", errors)
+
+    def test_stale_golden_counts_are_reported(self) -> None:
+        next((self.tmp / "fundamentals/pycubrid/expected").glob("*.expected")).unlink()
+        errors = counts.check(self.tmp, MATRIX)
+        self.assertIn("row 'pycubrid fundamentals': table says 22, repository has 21", errors)
+        self.assertIn("**Total** row says 65 golden-backed, repository has 64", errors)
+
+    def test_missing_table_and_total_are_reported(self) -> None:
+        self.assertEqual(
+            counts.check(ROOT, "no table"),
+            [f"Recipe Coverage table header not found: {counts.TABLE_HEADER!r}"],
+        )
+        total = next(line for line in MATRIX.splitlines() if line.startswith("| **Total**"))
+        self.assertIn(
+            "**Total** row is missing", counts.check(ROOT, MATRIX.replace(total + "\n", ""))
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

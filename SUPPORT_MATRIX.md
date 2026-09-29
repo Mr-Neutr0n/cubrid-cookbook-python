@@ -4,7 +4,8 @@ Tested combinations of CUBRID server, Python version, and driver/framework.
 
 > **What "tested" means here**: CI runs `make verify` on **CUBRID 11.2 and 11.4 / Python
 > 3.12** (job matrix), comparing stdout against every recipe that ships a golden
-> (`expected/*.expected`; counts in [Recipe Coverage](#recipe-coverage)). On pushes to `main`, the nightly schedule and manual
+> (`expected/*.expected`; counts in [Recipe Coverage](#recipe-coverage)); a pull request
+> that touches only examples checks just those examples. On pushes to `main`, the nightly schedule and manual
 > runs, the same job also runs the **Flask and FastAPI pytest suites** against its
 > live CUBRID container on both versions. The Streamlit and Django recipes are
 > **run manually** (see [How to Test](#how-to-test-against-a-specific-version)), not in CI.
@@ -13,7 +14,7 @@ Tested combinations of CUBRID server, Python version, and driver/framework.
 
 | CUBRID | Status | Notes |
 |--------|--------|-------|
-| **11.2** | ✅ CI-verified | Primary CI target — every golden-backed example output checked by `make verify` |
+| **11.2** | ✅ CI-verified | Primary CI target — every golden-backed example output checked by `make verify` (example-only pull requests check just the changed examples) |
 | **11.4** | ✅ CI-verified | Same CAS protocol as 11.2; runs in the smoke-test job matrix (`make verify` goldens, plus the Flask/FastAPI pytest suites on non-PR runs) |
 | 11.0 | ⚠️ Untested | Should work (same CAS protocol) |
 | 10.2 | ⚠️ Untested | Should work (same CAS protocol) |
