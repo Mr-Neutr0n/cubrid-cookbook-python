@@ -168,6 +168,23 @@ too and includes the request, installed versions/origins, verification commit,
 actual CUBRID server version when available, and job result. This handles the
 tag/publication race in the receiver; upstream notification timing is unchanged.
 
+When the upstream dispatch token is unavailable, maintainers verify a release by
+running the workflow manually with the same package allowlist and an exact version
+(`MAJOR.MINOR.PATCH` or `vMAJOR.MINOR.PATCH`):
+
+```bash
+gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python \
+  -f package=pycubrid -f version=1.8.0
+```
+
+These inputs are read from the event JSON and follow the same validation, exact
+PyPI install, bounded retry, pinning, origin check and summary as a release
+dispatch; an invalid, unavailable or mismatched release fails instead of testing
+the latest release. A manual run with the default inputs (`package=latest`, empty
+`version`), like pushes, pull requests and the nightly schedule, is an ordinary
+smoke run on the latest published releases and is reported as not a release
+verification.
+
 Run the smoke dependency guards without a database or network:
 
 ```bash

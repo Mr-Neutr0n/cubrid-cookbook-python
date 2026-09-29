@@ -9,6 +9,24 @@ on:
   repository_dispatch:
     types: [upstream-released]
   workflow_dispatch:
+    # Manual release fallback when the upstream dispatch token is unavailable.
+    # scripts/release_smoke.py reads and validates these values from the event
+    # JSON (same path as repository_dispatch); they never enter shell code.
+    # Leave both at their defaults for an ordinary latest-release smoke run.
+    inputs:
+      package:
+        description: "Released package to verify exactly (latest = no pinned release)"
+        type: choice
+        default: latest
+        options:
+          - latest
+          - pycubrid
+          - sqlalchemy-cubrid
+          - cubrid-mcp-server
+      version:
+        description: "Exact release to verify, MAJOR.MINOR.PATCH or vMAJOR.MINOR.PATCH (required with a package)"
+        type: string
+        default: ""
 
 concurrency:
   group: smoke-tests-${{ github.workflow }}-${{ github.ref }}
@@ -149,8 +167,10 @@ jobs:
       - name: Select released drivers
         timeout-minutes: 10
         run: |
-          # Reads the event JSON directly; untrusted payload fields never enter shell code.
-          # Requested releases get six bounded PyPI attempts, with no artifact fallback.
+          # Reads the event JSON directly; untrusted payload fields and manual
+          # inputs never enter shell code. Requested releases (repository_dispatch
+          # or a pinned workflow_dispatch) get six bounded PyPI attempts, with no
+          # artifact or latest-release fallback.
           python scripts/release_smoke.py select \
             --constraints "$RUNNER_TEMP/release-constraints.txt"
 
