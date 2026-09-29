@@ -3,8 +3,9 @@
 Tested combinations of CUBRID server, Python version, and driver/framework.
 
 > **What "tested" means here**: CI runs `make verify` on **CUBRID 11.2 and 11.4 / Python
-> 3.12** (job matrix), comparing stdout against the **46 recipes that ship goldens**
-> (`expected/*.expected`). On pushes to `main`, the nightly schedule and manual
+> 3.12** (job matrix), comparing stdout against every recipe that ships a golden
+> (`expected/*.expected`; counts in [Recipe Coverage](#recipe-coverage)); a pull request
+> that touches only examples checks just those examples. On pushes to `main`, the nightly schedule and manual
 > runs, the same job also runs the **Flask and FastAPI pytest suites** against its
 > live CUBRID container on both versions. The Streamlit and Django recipes are
 > **run manually** (see [How to Test](#how-to-test-against-a-specific-version)), not in CI.
@@ -13,7 +14,7 @@ Tested combinations of CUBRID server, Python version, and driver/framework.
 
 | CUBRID | Status | Notes |
 |--------|--------|-------|
-| **11.2** | ✅ CI-verified | Primary CI target — 46 example outputs checked by `make verify` |
+| **11.2** | ✅ CI-verified | Primary CI target — every golden-backed example output checked by `make verify` (example-only pull requests check just the changed examples) |
 | **11.4** | ✅ CI-verified | Same CAS protocol as 11.2; runs in the smoke-test job matrix (`make verify` goldens, plus the Flask/FastAPI pytest suites on non-PR runs) |
 | 11.0 | ⚠️ Untested | Should work (same CAS protocol) |
 | 10.2 | ⚠️ Untested | Should work (same CAS protocol) |
@@ -72,11 +73,13 @@ when available, and result even on failed runs. See
 
 ## Recipe Coverage
 
-The cookbook ships **62 recipes**. Verification is split:
+The table below is the source of truth for recipe counts;
+`scripts/check_support_matrix_counts.py` (run by `make check-docs`) fails
+when a row no longer matches the repository. Verification is split:
 
-- **45 recipes** carry stdout goldens (`expected/*.expected`) and are checked by
-  `make verify` in CI on **CUBRID 11.2 / Python 3.12** (fundamentals, migration,
-  quickstart, and the golden-backed templates).
+- **Golden-backed recipes** carry stdout goldens (`expected/*.expected`) and are
+  checked by `make verify` in CI on **CUBRID 11.2 and 11.4 / Python 3.12**
+  (fundamentals, migration, the SQLAlchemy quickstart, and the batch-etl template).
 - The **Flask and FastAPI** recipes are covered by pytest suites that the smoke
   job runs against its live CUBRID container on **11.2 and 11.4** for every push
   to `main`, nightly, and on manual runs (pull requests skip them to stay fast).
@@ -97,17 +100,23 @@ The cookbook ships **62 recipes**. Verification is split:
 
 | Category | Recipes | Verified by |
 |----------|---------|-------------|
-| pycubrid fundamentals | 16 | `make verify` (CI, 11.2) |
-| SQLAlchemy fundamentals | 7 | `make verify` (CI, 11.2) |
-| Pandas fundamentals | 6 | `make verify` (CI, 11.2) |
+| pycubrid fundamentals | 22 | `make verify` (CI, 11.2 + 11.4) |
+| SQLAlchemy fundamentals | 7 | `make verify` (CI, 11.2 + 11.4) |
+| SQLAlchemy ORM basics | 6 | `make verify` (CI, 11.2 + 11.4) |
+| Pandas fundamentals | 6 | `make verify` (CI, 11.2 + 11.4) |
+| Connect, CRUD, errors, transactions, LOB | 8 | `make verify` (CI, 11.2 + 11.4) |
+| Async + Alembic + JSON + Isolation | 5 | `make verify` (CI, 11.2 + 11.4) |
+| Java-to-Python migration | 5 | `make verify` (CI, 11.2 + 11.4) |
+| SQLAlchemy quickstart | 1 | `make verify` (CI, 11.2 + 11.4) |
+| Pandas batch-etl template | 5 | `make verify` (CI, 11.2 + 11.4) |
 | Flask templates | 11 | pytest (CI on `main` + nightly, 11.2 + 11.4) |
 | FastAPI templates | 12 | pytest (CI on `main` + nightly, 11.2 + 11.4) |
+| FastAPI quickstart | 1 | offline pytest (PR CI, mocked DB-API) |
+| AI agent template | 5 | pytest (smoke CI incl. PRs, 11.2 + 11.4) |
 | Streamlit templates | 5 | manual run |
 | Django template | 1 | manual run |
 | Celery async-worker template | 1 | manual run |
-| Pandas batch-etl template | 5 | manual run (goldens in `expected/`) |
-| Async + Alembic + JSON + Isolation | 4 | `make verify` (CI, 11.2) |
-| **Total** | **68** | 45 CI-verified on 11.2 via goldens; Flask and FastAPI pytest suites in CI on `main` + nightly; rest run manually |
+| **Total** | **101** | 65 golden-backed via `make verify` on 11.2 + 11.4; Flask and FastAPI pytest suites in CI on `main` + nightly; AI agent suite on every smoke run; rest run manually |
 
 ## Known Limitations by Version
 
