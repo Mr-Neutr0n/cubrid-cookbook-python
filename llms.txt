@@ -66,6 +66,7 @@ Benchmark-backed optimization patterns based on [cubrid-benchmark](https://githu
 ## Pitfalls
 
 - [pitfalls](pitfalls/): 7 common anti-patterns — reserved words, auto-commit differences, connection leaks, and more
+- [pitfalls/reserved-words](pitfalls/reserved-words/): live-verified recipe checking every reserved-word statement in the pitfalls guide against a real server
 
 ## Dependencies
 
