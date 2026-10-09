@@ -13,6 +13,10 @@ from collections.abc import Mapping
 from importlib import metadata
 from pathlib import Path
 
+# Tests load this file by path, so make its sibling helper importable either way.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from example_requirements import requirement_files  # noqa: E402
+
 DRIVERS = ("pycubrid", "sqlalchemy-cubrid")
 PACKAGES = (*DRIVERS, "cubrid-mcp-server")
 MANUAL_LATEST = "latest"  # workflow_dispatch default: no pinned release.
@@ -20,6 +24,10 @@ RELEASE_TAG = re.compile(r"v(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)"
 # Upstream correlation id; also used verbatim in the run name and artifact name.
 REQUEST_ID = re.compile(r"[A-Za-z0-9._-]{8,80}")
 REPORT_SCHEMA = 1
+# The cells a release verification must report, mirroring the smoke-test.yml
+# matrix (cubrid x python, plus the Python 3.11 include); a test keeps them in sync.
+DEFAULT_PYTHON = "3.12"
+RELEASE_CELLS = frozenset({("11.2", "3.12"), ("11.4", "3.12"), ("11.4", "3.11")})
 REPORT_PART = "release-verification-part.json"
 # Another repository's release workflow calls smoke-test.yml (on: workflow_call).
 # GITHUB_EVENT_NAME/GITHUB_EVENT_PATH then describe the CALLER's event, so the
@@ -215,25 +223,20 @@ def verify(state: Path) -> None:
 def install_examples(root: Path, constraints: Path) -> None:
     if not constraints.is_file():
         raise ValueError(f"Missing release constraints: {constraints}")
-    roots = sorted({p.parent for p in root.glob("**/expected") if p.is_dir()})
-    for example in roots:
-        if any(part.startswith(".") for part in example.relative_to(root).parts):
-            continue
-        requirements = example / "requirements.txt"
-        if requirements.is_file():
-            print(f"Installing example requirements: {requirements}", file=sys.stderr)
-            subprocess.check_call(
-                [
-                    sys.executable,
-                    "-m",
-                    "pip",
-                    "install",
-                    "--constraint",
-                    str(constraints.resolve()),
-                    "-r",
-                    str(requirements),
-                ]
-            )
+    for requirements in requirement_files(root):
+        print(f"Installing example requirements: {requirements}", file=sys.stderr)
+        subprocess.check_call(
+            [
+                sys.executable,
+                "-m",
+                "pip",
+                "install",
+                "--constraint",
+                str(constraints.resolve()),
+                "-r",
+                str(requirements),
+            ]
+        )
 
 
 def install_mcp(state: Path) -> None:
@@ -270,6 +273,7 @@ def summary(
     result: str,
     part: Path | None = None,
     cubrid: str = "",
+    python: str = "",
 ) -> None:
     """Report facts even if selection, publication or validation failed.
 
@@ -336,6 +340,7 @@ def summary(
             json.dumps(
                 {
                     "cubrid": cubrid,
+                    "python": python or None,
                     "request_valid": valid_request,
                     "installed_version": None if version == "unavailable" else version,
                     "origin": origin,
@@ -350,6 +355,13 @@ def summary(
         )
     if invalid_success:
         raise ValueError("A successful smoke result requires final version and origin verification")
+
+
+def cell(part: dict[str, object]) -> str:
+    """Name a smoke matrix cell: the CUBRID version plus a non-default Python."""
+    python = part.get("python")
+    show = python and python != DEFAULT_PYTHON
+    return f"CUBRID {part.get('cubrid')}" + (f", Python {python}" if show else "")
 
 
 def build_report(
@@ -369,16 +381,25 @@ def build_report(
         reasons.append("no smoke job reported a result")
     if verify_result != "success":
         reasons.append(f"smoke jobs finished with {verify_result or 'unknown'}")
+    if request is not None:
+        seen = [(p.get("cubrid"), p.get("python")) for p in parts]
+        for key in sorted(RELEASE_CELLS):
+            name = cell({"cubrid": key[0], "python": key[1]})
+            if key not in seen:
+                reasons.append(f"{name}: no result reported")
+            elif seen.count(key) > 1:
+                reasons.append(f"{name}: reported {seen.count(key)} times")
+        for key in sorted(set(seen) - RELEASE_CELLS, key=str):
+            reasons.append(f"unexpected smoke cell: CUBRID {key[0]}, Python {key[1]}")
     for p in parts:
         if p.get("installed_version") != requested:
             reasons.append(
-                f"CUBRID {p.get('cubrid')}: installed {p.get('installed_version')} "
+                f"{cell(p)}: installed {p.get('installed_version')} "
                 f"differs from requested {requested}"
             )
         elif p.get("verification") != "passed" or p.get("result") != "success":
             reasons.append(
-                f"CUBRID {p.get('cubrid')}: verification {p.get('verification')}, "
-                f"result {p.get('result')}"
+                f"{cell(p)}: verification {p.get('verification')}, result {p.get('result')}"
             )
     return {
         "schema_version": REPORT_SCHEMA,
@@ -390,7 +411,7 @@ def build_report(
         "status": "failure" if reasons else "success",
         "reasons": reasons,
         "run": run,
-        "matrix": sorted(parts, key=lambda p: str(p.get("cubrid"))),
+        "matrix": sorted(parts, key=lambda p: (str(p.get("cubrid")), str(p.get("python")))),
     }
 
 
@@ -486,6 +507,7 @@ def main() -> None:
     final.add_argument("--result", required=True)
     final.add_argument("--part", type=Path)
     final.add_argument("--cubrid", default="")
+    final.add_argument("--python", default="")
     combine = commands.add_parser("report")
     event_arguments(combine)
     combine.add_argument("--parts", type=Path, required=True)
@@ -537,6 +559,7 @@ def main() -> None:
                 args.result,
                 args.part,
                 args.cubrid,
+                args.python,
             )
     except (ValueError, OSError, metadata.PackageNotFoundError) as error:
         parser.exit(1, f"Release smoke check failed: {error}\n")

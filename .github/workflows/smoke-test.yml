@@ -12,8 +12,14 @@ run-name: >-
   github.event.client_payload.ref || inputs.version,
   github.event.client_payload.request_id || inputs.request_id || 'none') || ' ' }}
 
+# Pull requests are not a trigger (#222): ci.yml owns PR live coverage, including
+# the required `Smoke Tests (CUBRID 11.x)` checks, so one PR never runs the broad
+# 11.2/11.4 smoke twice. This workflow is the broad main/scheduled smoke, the
+# manual run and the exact release verification. The daily schedule is kept: it
+# caught make verify regressions on days without a main push (see CONTRIBUTING.md
+# "CI tiers"). Validate a change to this file with
+# `gh workflow run smoke-test.yml --ref <branch>` before merging.
 on:
-  pull_request:
   push:
     branches: [main]
   schedule:
@@ -112,12 +118,21 @@ env:
 
 jobs:
   verify:
-    name: Smoke Tests (CUBRID ${{ matrix.cubrid }})
+    name: Smoke Tests (CUBRID ${{ matrix.cubrid }}${{ matrix.python != '3.12' && format(', Python {0}', matrix.python) || '' }})
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         cubrid: ["11.2", "11.4"]
+        python: ["3.12"]
+        # Python 3.11 is the supported minimum. Only a release verification
+        # (the same condition as the concurrency group above) adds one extra
+        # cell, CUBRID 11.4 on 3.11; main, the schedule and other manual runs
+        # keep the two Python 3.12 cells. Existing job and artifact names stay.
+        include: >-
+          ${{ fromJSON((github.event_name == 'repository_dispatch' || (inputs.package && inputs.package != 'latest'))
+          && '[{"cubrid": "11.4", "python": "3.11"}]' || '[]') }}
     steps:
       - name: Detect release workflow call
         # A called job's github context is the caller's; job.workflow_ref/_sha/
@@ -159,75 +174,21 @@ jobs:
           # repository at the called workflow's own commit, not the caller's repo.
           repository: ${{ env.RELEASE_WORKFLOW_CALL == 'true' && 'cubrid-lab/cubrid-cookbook-python' || github.repository }}
           ref: ${{ env.COOKBOOK_COMMIT }}
-          # Full history so PR-scoped verify can diff against the base commit.
-          fetch-depth: 0
           # Do not persist GITHUB_TOKEN in .git/config: `make verify` runs
           # untrusted PR example code, which must not be able to read the token.
           persist-credentials: false
 
-      - name: Scope verify to changed examples (pull requests only)
+      - name: Select verify scope
         env:
           # A called run always verifies everything (the caller's PR is not ours).
           EVENT_NAME: ${{ env.RELEASE_WORKFLOW_CALL == 'true' && 'workflow_call' || github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
-          # Non-PR events (push to main, cron, upstream release, manual dispatch)
-          # always run the full suite: a dependency bump or scheduled run must
-          # exercise every example, not just a diff.
-          if [ "$EVENT_NAME" != "pull_request" ]; then
-            echo "VERIFY_PATHS=." >> "$GITHUB_ENV"
-            echo "Full verify (event=$EVENT_NAME)"
-            exit 0
-          fi
-
-          git fetch --no-tags --depth=1 origin "$PR_BASE_SHA" 2>/dev/null || true
-          CHANGED=$(git diff --name-only "$PR_BASE_SHA" HEAD)
-          echo "Changed files:"
-          printf '%s\n' "$CHANGED"
-
-          # Example roots are directories that own an expected/ folder.
-          EXROOTS=$(find . -type d -name expected -not -path '*/node_modules/*' \
-            | sed 's#/expected$##;s#^\./##' | sort -u)
-
-          SELECTED=""
-          FALLBACK=0
-          while IFS= read -r f; do
-            [ -z "$f" ] && continue
-            MATCH=""
-            for root in $EXROOTS; do
-              case "$f" in
-                "$root"/*) MATCH="$root"; break ;;
-              esac
-            done
-            if [ -n "$MATCH" ]; then
-              # Reject any path with characters outside a safe allowlist before it
-              # reaches $GITHUB_ENV / make / find. This closes the injection and
-              # word-splitting surface from PR-controlled directory names; the
-              # allowlist excludes spaces and shell metacharacters, so the
-              # space-separated `find $(VERIFY_PATHS)` in the Makefile stays safe.
-              case "$MATCH" in
-                *[!A-Za-z0-9._/-]*)
-                  echo "Unsafe example path forces full verify: $MATCH"
-                  FALLBACK=1 ;;
-                *)
-                  case " $SELECTED " in *" $MATCH "*) : ;; *) SELECTED="$SELECTED $MATCH" ;; esac ;;
-              esac
-            else
-              # A file outside every example dir (Makefile, scripts/, workflow,
-              # shared requirements, docs) can affect any example -> full run.
-              echo "Shared/global change forces full verify: $f"
-              FALLBACK=1
-            fi
-          done <<< "$CHANGED"
-
-          if [ "$FALLBACK" -eq 1 ] || [ -z "${SELECTED// /}" ]; then
-            echo "VERIFY_PATHS=." >> "$GITHUB_ENV"
-            echo "Full verify (fallback=$FALLBACK, selected='${SELECTED# }')"
-          else
-            echo "VERIFY_PATHS=${SELECTED# }" >> "$GITHUB_ENV"
-            echo "Scoped verify: ${SELECTED# }"
-            printf '### Scoped smoke: `%s`\n' "${SELECTED# }" >> "$GITHUB_STEP_SUMMARY"
-          fi
+          # Every event this workflow runs on (push to main, cron, upstream
+          # release, manual dispatch, workflow call) verifies the full suite: a
+          # dependency bump or scheduled run must exercise every example.
+          # Pull-request scoping lives in scripts/ci_scope.py (ci.yml).
+          echo "VERIFY_PATHS=." >> "$GITHUB_ENV"
+          echo "Full verify (event=$EVENT_NAME)"
 
       - name: Start CUBRID container
         run: |
@@ -244,7 +205,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: "3.12"
+          python-version: ${{ matrix.python }}
 
       - name: Check golden coverage
         # Guard against issue #89: a script inside an expected/-owning directory
@@ -261,7 +222,7 @@ jobs:
           python -m unittest discover -s tests -p 'test_wait_for_cubrid.py' -v
 
       - name: Cache pip downloads
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/pip
           # Rolling key: the target packages float to their latest release, so
@@ -375,7 +336,7 @@ jobs:
         if: github.event_name != 'pull_request' || env.RELEASE_WORKFLOW_CALL == 'true'
         # One explicit list avoids conflicting pins in individual recipe files.
         # PIP_CONSTRAINT also covers these packages' transitive driver requirements.
-        run: pip install flask flask-sqlalchemy fastapi email-validator httpx pytest pytest-asyncio streamlit pandas -r templates/async-worker/requirements.txt -r templates/django/requirements.txt
+        run: pip install flask flask-sqlalchemy fastapi email-validator httpx pytest pytest-asyncio streamlit pandas -r templates/async-worker/requirements.txt -r templates/django/requirements.txt -r templates/api-service-fastapi/requirements.txt
 
       - name: Record tested versions
         run: |
@@ -402,86 +363,9 @@ jobs:
         run: make verify VERIFY_PATHS="${VERIFY_PATHS:-.}"
 
       - name: Smoke test cubrid-mcp-server
-        run: |
-          # Real-usage smoke: build the FastMCP server object and enumerate its
-          # registered tools, rather than only importing the package. This exercises
-          # the @mcp.tool registration path and catches a broken server surface (e.g.
-          # a tool that fails to register) that a bare `import` would silently pass.
-          # Tool handlers connect to CUBRID lazily (only on first call via _db()), so
-          # listing the tool surface needs no live database and no CUBRID_* env vars.
-          python - <<'PY'
-          import asyncio
-
-          from cubrid_mcp_server.server import mcp
-
-          # The public tool contract documented in the server's README. Every
-          # supported release must expose these; a rename or drop fails loudly.
-          expected = {
-              "all_table_names",
-              "filter_table_names",
-              "schema_definitions",
-              "describe_table",
-              "list_indexes",
-              "explain_query",
-              "table_row_counts",
-              "list_serials",
-              "list_class_hierarchy",
-              "execute_query",
-          }
-          # Tools added after v0.2.1 (e.g. health_check on main). Optional ONLY for
-          # the pinned v0.2.1 tag; the version gate below promotes health_check to
-          # required once a newer ref (see install step) is installed, so a newer
-          # dispatched release that drops it fails loudly.
-          optional = {
-              "health_check",
-          }
-
-          # Promote health_check from optional to required once the installed
-          # cubrid-mcp-server is newer than v0.2.1 (the release that predates it).
-          # Parse the numeric (major, minor, patch) prefix without depending on
-          # `packaging`, so a dispatched newer release must actually expose it.
-          from importlib.metadata import version as _pkg_version
-
-          def _numeric_release(raw):
-              parts = []
-              for chunk in raw.split(".")[:3]:
-                  digits = ""
-                  for ch in chunk:
-                      if ch.isdigit():
-                          digits += ch
-                      else:
-                          break
-                  parts.append(int(digits) if digits else 0)
-              while len(parts) < 3:
-                  parts.append(0)
-              return tuple(parts)
-
-          installed = _numeric_release(_pkg_version("cubrid-mcp-server"))
-          if installed > (0, 2, 1):
-              expected.add("health_check")
-              optional.discard("health_check")
-              print(
-                  f"cubrid-mcp-server {installed} > (0, 2, 1): requiring health_check tool"
-              )
-
-          tools = asyncio.run(mcp.list_tools())
-          names = {tool.name for tool in tools}
-          print(f"cubrid-mcp-server exposes {len(names)} tools: {sorted(names)}")
-
-          missing = expected - names
-          if missing:
-              raise SystemExit(f"cubrid-mcp-server missing expected tools: {sorted(missing)}")
-
-          # Fail on genuinely unknown tools so an upstream addition can't slip in
-          # untracked; known-optional additions are tolerated on purpose.
-          unknown = names - expected - optional
-          if unknown:
-              raise SystemExit(
-                  "cubrid-mcp-server exposes undocumented tools "
-                  f"(update the smoke-test contract): {sorted(unknown)}"
-              )
-          print("cubrid-mcp-server real-usage smoke OK")
-          PY
+        # Real-usage tool-surface smoke; the contract lives in scripts/mcp_smoke.py
+        # and is shared with the ci.yml pull-request smoke lanes.
+        run: python scripts/mcp_smoke.py
 
       - name: Run Flask and FastAPI pytest suites (non-PR runs only)
         if: github.event_name != 'pull_request' || env.RELEASE_WORKFLOW_CALL == 'true'
@@ -504,7 +388,7 @@ jobs:
           CUBRID_VERSION: ${{ matrix.cubrid }}
         run: |
           shopt -s nullglob
-          suites=(templates/flask/*/tests templates/api-service-fastapi/recipes/*/tests)
+          suites=(templates/flask/*/tests templates/api-service-fastapi/tests templates/api-service-fastapi/recipes/*/tests)
           if [ "${#suites[@]}" -eq 0 ]; then
             echo "::error::No pytest suites found"
             exit 1
@@ -670,6 +554,7 @@ jobs:
         env:
           SMOKE_RESULT: ${{ job.status }}
           CUBRID_VERSION: ${{ matrix.cubrid }}
+          PYTHON_VERSION: ${{ matrix.python }}
         run: |
           set -o pipefail
           # Release requests also write this job's machine-readable result.
@@ -678,14 +563,15 @@ jobs:
             --result "$SMOKE_RESULT" \
             --part "$RUNNER_TEMP/release-verification-part.json" \
             --cubrid "$CUBRID_VERSION" \
+            --python "$PYTHON_VERSION" \
             | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload release verification result
         # Only release requests write the file; other runs upload nothing.
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: release-verification-part-cubrid-${{ matrix.cubrid }}
+          name: release-verification-part-cubrid-${{ matrix.cubrid }}${{ matrix.python != '3.12' && format('-py{0}', matrix.python) || '' }}
           path: ${{ runner.temp }}/release-verification-part.json
           if-no-files-found: ignore
           retention-days: 7
@@ -702,6 +588,7 @@ jobs:
     # The package input is set only for manual runs and workflow calls.
     if: ${{ always() && (github.event_name == 'repository_dispatch' || github.event_name == 'workflow_dispatch' || inputs.package != '') }}
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     # Read by workflow_call callers (see on.workflow_call.outputs).
     outputs:
       status: ${{ steps.report.outputs.status }}
@@ -754,7 +641,7 @@ jobs:
       - name: Download smoke job results
         # A missing result makes the report fail below, never pass.
         continue-on-error: true
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: release-verification-part-*
           path: ${{ runner.temp }}/release-verification-parts
@@ -775,7 +662,7 @@ jobs:
 
       - name: Upload release verification report
         if: ${{ always() && steps.report.outputs.release == 'true' }}
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ steps.report.outputs.artifact }}
           path: ${{ runner.temp }}/release-verification/release-verification.json

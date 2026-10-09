@@ -4,7 +4,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![CUBRID 11.2 | 11.4](https://img.shields.io/badge/CUBRID-11.2%20%7C%2011.4-green.svg)](SUPPORT_MATRIX.md)
-[![Python 3.10+](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 ![pycubrid](https://img.shields.io/badge/pycubrid-%E2%89%A51.6.1-blue)
 ![sqlalchemy-cubrid](https://img.shields.io/badge/sqlalchemy--cubrid-%E2%89%A51.0-blue)
 ![status](https://img.shields.io/badge/status-active%20development-yellow)
@@ -68,9 +68,9 @@ Benchmark-backed optimization patterns:
 
 | Pattern | Impact |
 |---------|--------|
-| [Fetch optimization](performance/fetch-optimization/) | SELECT 10K rows: 96ms → 78ms (−19%) |
-| [Bulk insert](performance/bulk-insert/) | COMMIT is 7× costlier than INSERT — batch your writes |
-| [Connection pooling](performance/connection-pooling/) | Reuse connections to avoid 1.7ms/connect overhead |
+| [Fetch optimization](performance/fetch-optimization/) | `fetchall()` vs `fetchone()`, column selection and server-side pagination |
+| [Bulk insert](performance/bulk-insert/) | batch your COMMITs (~28 → ~1,279 rows/s, pycubrid 1.10.0) |
+| [Connection pooling](performance/connection-pooling/) | reuse connections (~5.9 ms vs ~0.8 ms per query, pycubrid 1.10.0) |
 
 ### Pitfalls
 

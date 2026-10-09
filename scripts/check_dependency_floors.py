@@ -34,7 +34,13 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 MATRIX_PATH = REPO_ROOT / "SUPPORT_MATRIX.md"
 
 DRIVERS = ("pycubrid", "sqlalchemy-cubrid")
-REQ_LINE_RE = re.compile(r"^(pycubrid|sqlalchemy-cubrid)(.*)$")
+# Optional extras (``sqlalchemy-cubrid[pycubrid]>=1.0``) and whitespace around
+# the specifier (``pycubrid >= 1.6.1``) are valid pip syntax (#241).
+# Names match case-insensitively with PEP 503 normalisation (``PyCUBRID``,
+# ``sqlalchemy_cubrid``, ``sqlalchemy.cubrid``).
+REQ_LINE_RE = re.compile(
+    r"^(pycubrid|sqlalchemy[-_.]cubrid)(?![\w.-])\s*(?:\[[^\]]*\])?(.*)$", re.IGNORECASE
+)
 FLOOR_RE = re.compile(r"^>=([0-9][\w.]*?)(,<[0-9][\w.]*)?$")
 
 # The full example apps under templates/ (and their standalone per-recipe
@@ -70,21 +76,63 @@ TEMPLATE_SQLALCHEMY_FLOOR = "1.7,<2"
 # fundamentals/pycubrid's 16_batch_error_handling and 20_timezone_datetime
 # goldens assume the errno-carrying batch errors (#390) and the CAS session
 # kept across commit() (#468/#472) that first shipped in pycubrid 1.8.0.
+#
+# fundamentals/pycubrid's and fundamentals/sqlalchemy's collection recipes
+# (10_collection_columns, 07_collection_types) bind collections with the typed
+# Set/Multiset/Sequence parameters, which first shipped in pycubrid 1.9.0
+# (#567); fundamentals/sqlalchemy also needs sqlalchemy-cubrid 1.9.
 EXACT_PYCUBRID_FLOOR = {
-    "fundamentals/pycubrid": "1.8,<2",
+    "fundamentals/pycubrid": "1.9,<2",
+    "fundamentals/sqlalchemy": "1.9,<2",
+}
+
+# fundamentals/alembic's golden prints the dialect's runtime
+# ``transactional_ddl`` (True since 1.8.0, sqlalchemy-cubrid#503), and its
+# env.py relies on the automatic CubridImpl registration
+# (sqlalchemy-cubrid#504) instead of importing ``sqlalchemy_cubrid.alembic_impl``;
+# both first shipped in sqlalchemy-cubrid 1.8.0.
+#
+# fundamentals/async's 02_async_sqlalchemy fails on sqlalchemy-cubrid 1.4.x
+# with SQLAlchemy 2.1 (which their metadata allows): the async adapter calls the
+# removed ``await_`` attribute. 1.5.0 is the first release that passes (#241).
+EXACT_SQLALCHEMY_FLOOR = {
+    "fundamentals/alembic": "1.8",
+    "fundamentals/sqlalchemy": "1.9",
+    "fundamentals/async": "1.5",
 }
 
 # "Advanced" SQLAlchemy recipes are pinned to the floor documented in the
 # [^async] footnote (sqlalchemy-cubrid 1.2.3 first shipped the async dialect
-# entry points; this cookbook pins 1.4.2 to match every advanced recipe).
+# entry points; this cookbook pins 1.4.2 for the other advanced recipes).
 ADVANCED_SQLALCHEMY_DIRS = (
-    "fundamentals/async",
     "fundamentals/pandas",
     "fundamentals/sqlalchemy",
     "templates/dashboard",
     "templates/django",
 )
 ADVANCED_SQLALCHEMY_FLOOR = "1.4.2"
+
+
+def parse_driver_requirement(line: str) -> tuple[str, str] | None:
+    """Return ``(driver, specifier)`` for a driver line, with extras and spaces dropped.
+
+    >>> parse_driver_requirement("sqlalchemy-cubrid[pycubrid] >= 1.0")
+    ('sqlalchemy-cubrid', '>=1.0')
+    >>> parse_driver_requirement("pycubrid>=1.7, <2")
+    ('pycubrid', '>=1.7,<2')
+    >>> parse_driver_requirement("PyCUBRID>=1.7,<2")
+    ('pycubrid', '>=1.7,<2')
+    >>> parse_driver_requirement("sqlalchemy_cubrid>=1.0")
+    ('sqlalchemy-cubrid', '>=1.0')
+    >>> parse_driver_requirement("sqlalchemy>=2.0") is None
+    True
+    """
+    match = REQ_LINE_RE.match(line.strip())
+    if not match:
+        return None
+    driver, rest = match.groups()
+    driver = re.sub(r"[-_.]+", "-", driver).lower()
+    return driver, re.sub(r"\s+", "", rest)
 
 
 def _requirement_files(root: Path) -> list[Path]:
@@ -124,10 +172,10 @@ def check(root: Path, matrix: str) -> list[str]:
     for req_file in _requirement_files(root):
         directory = req_file.parent.relative_to(root).as_posix()
         for line in req_file.read_text(encoding="utf-8").splitlines():
-            match = REQ_LINE_RE.match(line.strip())
-            if not match:
+            parsed = parse_driver_requirement(line)
+            if parsed is None:
                 continue
-            driver, rest = match.groups()
+            driver, rest = parsed
             where = f"{req_file.relative_to(root)}: {line.strip()!r}"
             if not rest:
                 errors.append(f"{where}: no version floor (every recipe installs standalone)")
@@ -143,6 +191,12 @@ def check(root: Path, matrix: str) -> list[str]:
                 actual = base + (upper or "")
                 if actual != expected:
                     errors.append(f"{where}: expected pycubrid>={expected} in {directory}")
+                continue
+            if driver == "sqlalchemy-cubrid" and directory in EXACT_SQLALCHEMY_FLOOR:
+                expected = EXACT_SQLALCHEMY_FLOOR[directory]
+                actual = base + (upper or "")
+                if actual != expected:
+                    errors.append(f"{where}: expected sqlalchemy-cubrid>={expected} in {directory}")
                 continue
             if driver == "pycubrid" and directory in template_pycubrid_dirs:
                 actual = base + (upper or "")
@@ -180,6 +234,7 @@ def check(root: Path, matrix: str) -> list[str]:
 
     for label, dirs in (
         ("fundamentals/pycubrid exception", EXACT_PYCUBRID_FLOOR),
+        ("exact sqlalchemy-cubrid floor exception", EXACT_SQLALCHEMY_FLOOR),
         ("advanced SQLAlchemy floor", {d: None for d in ADVANCED_SQLALCHEMY_DIRS}),
     ):
         for directory in dirs:

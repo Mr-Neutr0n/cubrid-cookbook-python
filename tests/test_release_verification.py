@@ -7,6 +7,7 @@ import importlib.util
 import io
 import json
 import re
+import shutil
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,6 +22,7 @@ assert SPEC is not None and SPEC.loader is not None
 smoke = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(smoke)
 WORKFLOW = (ROOT / ".github/workflows/smoke-test.yml").read_text()
+ALL_CELLS = (("11.2", "3.12"), ("11.4", "3.11"), ("11.4", "3.12"))
 RUN = {"id": "42", "attempt": "1", "url": "https://example.test/runs/42", "commit": "abc"}
 REPORT_KEYS = {
     "schema_version",
@@ -35,6 +37,7 @@ REPORT_KEYS = {
 }
 PART_KEYS = {
     "cubrid",
+    "python",
     "request_valid",
     "installed_version",
     "origin",
@@ -96,17 +99,17 @@ class ReleaseVerificationTests(unittest.TestCase):
         inputs = {"package": "pycubrid", "version": "1.8.0", **fields}
         self.event.write_text(json.dumps({"inputs": inputs}))
 
-    def run_matrix(self, event_name: str, cubrids=("11.2", "11.4")) -> None:
+    def run_matrix(self, event_name: str, cells=ALL_CELLS) -> None:
         """Simulate the smoke jobs: freeze the request, then write each job's part."""
         request = None
         with contextlib.suppress(ValueError):
             request = smoke.read_request(event_name, self.event)
         smoke.freeze(self.state, self.constraints, request)
-        self.write_parts(event_name, cubrids)
+        self.write_parts(event_name, cells)
 
-    def write_parts(self, event_name: str, cubrids=("11.2", "11.4")) -> None:
-        for cubrid in cubrids:
-            directory = self.parts / f"release-verification-part-cubrid-{cubrid}"
+    def write_parts(self, event_name: str, cells=ALL_CELLS) -> None:
+        for cubrid, python in cells:
+            directory = self.parts / f"release-verification-part-cubrid-{cubrid}-py{python}"
             directory.mkdir(parents=True, exist_ok=True)
             with contextlib.redirect_stdout(io.StringIO()), contextlib.suppress(ValueError):
                 smoke.summary(
@@ -118,6 +121,7 @@ class ReleaseVerificationTests(unittest.TestCase):
                     "success",
                     directory / smoke.REPORT_PART,
                     cubrid,
+                    python,
                 )
 
     def report(self, event_name: str, verify_result: str = "success") -> tuple[bool, str]:
@@ -243,7 +247,7 @@ class ReleaseVerificationTests(unittest.TestCase):
         self.assertEqual(report["status"], "success")
         self.assertEqual(report["reasons"], [])
         self.assertEqual(report["run"], RUN)
-        self.assertEqual([part["cubrid"] for part in report["matrix"]], ["11.2", "11.4"])
+        self.assertEqual([part["cubrid"] for part in report["matrix"]], ["11.2", "11.4", "11.4"])
         for part in report["matrix"]:
             self.assertEqual(set(part), PART_KEYS)
             self.assertEqual(part["installed_version"], "1.8.0")
@@ -336,7 +340,7 @@ class ReleaseVerificationTests(unittest.TestCase):
 
     def test_report_command_exits_nonzero_on_mismatch(self) -> None:
         self.payload(request_id="test-187-a1b2c3")
-        self.run_matrix("repository_dispatch", ("11.2",))
+        self.run_matrix("repository_dispatch", (("11.2", "3.12"),))
         argv = [
             "release_smoke.py",
             "report",
@@ -367,7 +371,13 @@ class ReleaseVerificationTests(unittest.TestCase):
         self.assertIn("      request_id:\n", WORKFLOW[: WORKFLOW.index("concurrency:")])
         verify = WORKFLOW[WORKFLOW.index("\n  verify:") : WORKFLOW.index("\n  report:")]
         self.assertIn('--part "$RUNNER_TEMP/release-verification-part.json"', verify)
-        self.assertIn("name: release-verification-part-cubrid-${{ matrix.cubrid }}", verify)
+        # The default cells keep their documented artifact names; only the extra
+        # Python cell gets a -py suffix so it cannot overwrite the 11.4 result.
+        self.assertIn(
+            "name: release-verification-part-cubrid-${{ matrix.cubrid }}"
+            "${{ matrix.python != '3.12' && format('-py{0}', matrix.python) || '' }}",
+            verify,
+        )
         report = WORKFLOW[WORKFLOW.index("\n  report:") :]
         self.assertIn("needs: verify", report)
         self.assertIn("always() && (github.event_name == 'repository_dispatch'", report)
@@ -377,6 +387,162 @@ class ReleaseVerificationTests(unittest.TestCase):
         # Re-running failed jobs must be able to replace both artifacts.
         self.assertEqual(WORKFLOW.count("overwrite: true"), 2)
         self.assertNotIn("pypi", report.lower())
+
+    def test_report_lists_a_python_311_cell_and_names_its_failure(self) -> None:
+        self.payload(request_id="test-238-a1b2c3")
+        self.run_matrix("repository_dispatch")
+        passed, _ = self.report("repository_dispatch")
+        self.assertTrue(passed)
+        report = json.loads(self.output.read_text())
+        self.assertEqual(
+            [(part["cubrid"], part["python"]) for part in report["matrix"]],
+            [("11.2", "3.12"), ("11.4", "3.11"), ("11.4", "3.12")],
+        )
+        # A failed 3.11 cell fails the release and says which cell it was.
+        failed = self.parts / "release-verification-part-cubrid-11.4-py3.11" / smoke.REPORT_PART
+        part = json.loads(failed.read_text())
+        failed.write_text(json.dumps({**part, "result": "failure"}))
+        passed, _ = self.report("repository_dispatch")
+        self.assertFalse(passed)
+        report = json.loads(self.output.read_text())
+        self.assertEqual(report["status"], "failure")
+        self.assertEqual(
+            report["reasons"],
+            ["CUBRID 11.4, Python 3.11: verification passed, result failure"],
+        )
+
+    def test_release_verification_adds_only_a_python_311_cell(self) -> None:
+        verify = WORKFLOW[WORKFLOW.index("\n  verify:") : WORKFLOW.index("\n  report:")]
+        strategy = verify[verify.index("    strategy:") : verify.index("    steps:")]
+        # Default cells: the two CUBRID versions on the current Python 3.12.
+        self.assertIn('        cubrid: ["11.2", "11.4"]\n', strategy)
+        self.assertIn('        python: ["3.12"]\n', strategy)
+        # The one extra cell is CUBRID 11.4 on the supported minimum, 3.11 ...
+        self.assertEqual(
+            re.findall(r"\[\{[^]]*\}\]", strategy), ['[{"cubrid": "11.4", "python": "3.11"}]']
+        )
+        self.assertIn(
+            '&& \'[{"cubrid": "11.4", "python": "3.11"}]\' || \'[]\'', " ".join(strategy.split())
+        )
+        # ... added only for a release verification, the concurrency group's condition.
+        condition = "github.event_name == 'repository_dispatch' || (inputs.package && inputs.package != 'latest')"
+        self.assertIn(condition, " ".join(strategy.split()))
+        self.assertIn(condition, " ".join(WORKFLOW[WORKFLOW.index("concurrency:") :].split()))
+        # Setup uses the cell's Python, with no stray hard-coded version left.
+        self.assertIn("python-version: ${{ matrix.python }}", verify)
+        self.assertNotIn(
+            "python-version:", verify.replace("python-version: ${{ matrix.python }}", "")
+        )
+        self.assertIn('--python "$PYTHON_VERSION"', verify)
+        self.assertIn("PYTHON_VERSION: ${{ matrix.python }}", verify)
+        # The job name of the existing cells does not change; the extra cell is labelled.
+        self.assertIn(
+            "name: Smoke Tests (CUBRID ${{ matrix.cubrid }}"
+            "${{ matrix.python != '3.12' && format(', Python {0}', matrix.python) || '' }})",
+            verify,
+        )
+        # No new trigger or schedule: still the single daily cron.
+        self.assertEqual(WORKFLOW.count("cron:"), 1)
+
+    def test_summary_command_records_the_python_of_the_cell(self) -> None:
+        self.payload(request_id="test-238-a1b2c3")
+        request = smoke.read_request("repository_dispatch", self.event)
+        smoke.freeze(self.state, self.constraints, request)
+        self.parts.mkdir()
+        part_file = self.parts / "part.json"
+        argv = [
+            "release_smoke.py",
+            "summary",
+            "--event-name",
+            "repository_dispatch",
+            "--event-path",
+            str(self.event),
+            "--state",
+            str(self.state),
+            "--commit",
+            "abc",
+            "--server",
+            "11.4.0.0150",
+            "--result",
+            "success",
+            "--part",
+            str(part_file),
+            "--cubrid",
+            "11.4",
+            "--python",
+            "3.11",
+        ]
+        with (
+            patch.object(smoke.sys, "argv", argv),
+            contextlib.redirect_stdout(io.StringIO()),
+        ):
+            smoke.main()
+        part = json.loads(part_file.read_text())
+        self.assertEqual((part["cubrid"], part["python"]), ("11.4", "3.11"))
+
+    def test_report_matrix_is_sorted_by_cubrid_then_python(self) -> None:
+        self.payload(request_id="test-238-a1b2c3")
+        request = smoke.read_request("repository_dispatch", self.event)
+        smoke.freeze(self.state, self.constraints, request)
+        # Written in reverse order; "11.4"/"3.11" must still precede "11.4"/"3.12".
+        self.write_parts("repository_dispatch", tuple(reversed(ALL_CELLS)))
+        # Parts are read in path order, so name the directories to arrive out of order.
+        for cell_dir, name in (("11.4-py3.12", "11.4-a"), ("11.4-py3.11", "11.4-b")):
+            (self.parts / f"release-verification-part-cubrid-{cell_dir}").rename(
+                self.parts / f"release-verification-part-cubrid-{name}"
+            )
+        passed, _ = self.report("repository_dispatch")
+        self.assertTrue(passed)
+        report = json.loads(self.output.read_text())
+        self.assertEqual([(p["cubrid"], p["python"]) for p in report["matrix"]], list(ALL_CELLS))
+
+    def test_release_requires_exactly_the_workflow_matrix_cells(self) -> None:
+        verify = WORKFLOW[WORKFLOW.index("\n  verify:") : WORKFLOW.index("\n  report:")]
+        strategy = verify[verify.index("    strategy:") : verify.index("    steps:")]
+        cubrids = re.search(r"cubrid: \[(.*?)\]", strategy).group(1)
+        pythons = re.search(r"python: \[(.*?)\]", strategy).group(1)
+        cells = {
+            (c, p)
+            for c in re.findall(r'"([^"]+)"', cubrids)
+            for p in re.findall(r'"([^"]+)"', pythons)
+        }
+        cells |= {
+            (m[0], m[1])
+            for m in re.findall(r'\{"cubrid": "([^"]+)", "python": "([^"]+)"\}', strategy)
+        }
+        self.assertEqual(cells, set(ALL_CELLS))
+        self.assertEqual(smoke.RELEASE_CELLS, cells)
+
+    def test_missing_or_duplicate_cells_fail_a_release_report(self) -> None:
+        self.payload(request_id="test-238-a1b2c3")
+        request = smoke.read_request("repository_dispatch", self.event)
+        smoke.freeze(self.state, self.constraints, request)
+        for missing in ALL_CELLS:
+            with self.subTest(missing=missing):
+                self.write_parts("repository_dispatch", tuple(c for c in ALL_CELLS if c != missing))
+                passed, _ = self.report("repository_dispatch")
+                self.assertFalse(passed)
+                reasons = json.loads(self.output.read_text())["reasons"]
+                self.assertEqual(len(reasons), 1, reasons)
+                self.assertIn("no result reported", reasons[0])
+                shutil.rmtree(self.parts)
+        # The same cell reported twice (e.g. a re-run artifact under another name).
+        self.write_parts("repository_dispatch", ALL_CELLS)
+        copy = self.parts / "release-verification-part-cubrid-11.4-py3.11-copy"
+        copy.mkdir()
+        shutil.copy(
+            self.parts / "release-verification-part-cubrid-11.4-py3.11" / smoke.REPORT_PART, copy
+        )
+        passed, _ = self.report("repository_dispatch")
+        self.assertFalse(passed)
+        reasons = json.loads(self.output.read_text())["reasons"]
+        self.assertEqual(reasons, ["CUBRID 11.4, Python 3.11: reported 2 times"])
+
+    def test_cell_names_omit_the_default_python(self) -> None:
+        self.assertEqual(smoke.cell({"cubrid": "11.2", "python": "3.12"}), "CUBRID 11.2")
+        self.assertEqual(
+            smoke.cell({"cubrid": "11.4", "python": "3.11"}), "CUBRID 11.4, Python 3.11"
+        )
 
 
 if __name__ == "__main__":

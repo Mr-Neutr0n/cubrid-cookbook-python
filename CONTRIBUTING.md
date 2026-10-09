@@ -67,8 +67,8 @@ Make/Compose regression tests. `make test-offline` runs just the offline test
 suites. Each suite uses its own process to avoid conflicting recipe module names.
 These checks require no database and do not prove live CUBRID compatibility;
 run the relevant example or `make verify` against CUBRID for that evidence.
-CI runs the same `make check` command. Both required live smoke matrix jobs also
-run the Make/readiness regression guards before selecting driver dependencies.
+CI runs the same `make check` command on every pull request (see
+[CI tiers](#ci-tiers) for which live lanes run on top of it).
 The repository is an example collection, so `pip install -e .` is not supported.
 
 ### Dependency updates
@@ -97,7 +97,106 @@ When a new recipe adds a `requirements.txt` outside the configured
 `directories` globs, extend the globs in the same PR; the test above fails
 until you do.
 
+### CI tiers
+
+Two workflows share live CUBRID validation (#222). `scripts/ci_scope.py`
+classifies each `ci.yml` run from its event and changed paths; a lane starts only
+when selected, and the single required `CI Gate (all checks must pass)` accepts a
+skipped lane only when the classifier said `false` for it. A failed, cancelled or
+unexpectedly skipped lane, or a failed classification, fails the gate.
+
+| Tier | When | What runs |
+|------|------|-----------|
+| 1 — cheap checks | every pull request | Ruff, `make check`, docs-sync, doc-lint, classification and the gate; the strict docs-site build |
+| 2 — path-selected live lanes | pull requests | only the touched family on CUBRID 11.4 / Python 3.12: Flask/FastAPI → representative suites; dashboard, async-worker, Django → their suite; CQRS recipe → its pinned job; golden examples → `Smoke Tests (CUBRID 11.4)` with `make verify` scoped to the touched examples; AI-agent code or other files in example trees → the same lane with a full `make verify` |
+| 2 — fan-out | pull requests changing shared live infrastructure (`Makefile`, `docker-compose.yml`, `scripts/normalize_output.sh`, readiness/coverage scripts), `ci.yml`, `scripts/ci_scope.py` or `.github/actions/` | every live lane, both smoke lanes and CQRS on 11.2 + 11.4 with full `make verify`, Python 3.11 + 3.14 compatibility |
+| 3 — Python compatibility | push to `main`, weekly schedule, manual `ci.yml` run; pull requests changing `fundamentals/pycubrid`, `fundamentals/sqlalchemy` or fan-out paths | 3.11–3.14 on broad events; 3.11 + 3.14 endpoints on those pull requests |
+| 4 — broad smoke | `smoke-test.yml`: push to `main`, nightly schedule, manual run, release verification (`repository_dispatch` / `workflow_call`) | every golden plus all Flask/FastAPI, async-worker, Django and dashboard suites on CUBRID 11.2 + 11.4 (Python 3.12); a release verification adds one CUBRID 11.4 cell on Python 3.11, the supported minimum |
+
+- Docs-only pull requests (`*.md`, `docs/`, `mkdocs.yml`, …) start no live CUBRID,
+  except `SUPPORT_MATRIX.md`, which documents the driver floors.
+- `Driver floors (CUBRID 11.4)` (#241) installs every documented driver floor
+  exactly (`scripts/driver_floors.py`, one virtual environment per floor set,
+  Python 3.12) and diffs representative goldens against live CUBRID 11.4. It runs
+  on pull requests that change `SUPPORT_MATRIX.md`, the floor checker or lane, or
+  the `requirements.txt` of a directory the lane runs (`ci_scope.FLOORS`), on the
+  weekly `ci.yml` schedule and on manual `ci.yml` runs — not on pushes to `main`,
+  since the floors are fixed releases; edits to a lane directory's code do not select it, the weekly schedule covers them. One job, about 3 minutes.
+  Unknown paths fail closed to every recipe family lane and the 11.4 smoke lane
+  with a full `make verify`.
+- CUBRID 11.2 runs on a pull request only for version-sensitive changes:
+  `smoke-test.yml`, `scripts/release_smoke.py`, `scripts/mcp_smoke.py`, the
+  fan-out paths, or recipe 10's `requirements.txt` (CQRS job only).
+- Example directories with no live consumer (`performance/`, the FastAPI
+  quickstart, `fundamentals/parameterized-queries`) are covered by the offline
+  checks only, on every event.
+- The Flask/FastAPI lane runs the representative `01-basic-crud` suites, not the
+  touched recipe's own suite (unchanged; tracked in #227).
+- `smoke-test.yml` does not run on pull requests, so no pull request repeats the
+  broad 11.2/11.4 matrix. Its exact release verification inputs, outputs and
+  fail-closed reporting are unchanged. To test a change to it before merging, run
+  `gh workflow run smoke-test.yml -R cubrid-lab/cubrid-cookbook-python --ref <branch>`.
+- The required check names `Smoke Tests (CUBRID 11.2)` and
+  `Smoke Tests (CUBRID 11.4)` now come from the two `ci.yml` pull-request smoke
+  lanes (`.github/actions/pr-smoke`). When the classifier skips a lane its check
+  reports *skipped*, which branch protection accepts; the gate still enforces it.
+- On `main` and schedule events `ci.yml` runs only what `smoke-test.yml` does not
+  cover (Python 3.11–3.14 and CQRS pins on 11.2 + 11.4); its other live jobs
+  report skipped there.
+- Dependabot grouping is unchanged. A grouped multi-directory recipe bump starts
+  only the families it touches (for example a Flask bump: one Flask/FastAPI lane)
+  plus the cheap checks; a GitHub Actions group bump edits `ci.yml` and therefore
+  fans out.
+- The nightly `smoke-test.yml` schedule stays daily: between 2026-09-01 and
+  2026-10-07, 10 of 37 scheduled runs failed in `make verify`, most on days
+  without a `main` push (2026-09-03 to 09-08, 09-25/26), so main pushes alone
+  would have detected those regressions days later.
+- **Advisory driver-main lane (#239), never gated.** `.github/workflows/driver-main.yml`
+  installs `pycubrid` and `sqlalchemy-cubrid` from their `main` branches (pinned
+  to the commits resolved at the start of the run, and verified after install)
+  and runs `make verify` on representative golden directories against CUBRID
+  11.4. It has no schedule of its own: the weekly `ci.yml` schedule calls it
+  (job `driver-main-advisory`, outside `CI Gate`), and it can be dispatched with
+  `gh workflow run driver-main.yml -R cubrid-lab/cubrid-cookbook-python`. A
+  scheduled call is skipped when neither driver's `main` has a commit from the
+  last 8 days, and the lane runs only in the upstream repository. Its recipe job
+  has `continue-on-error`, so a break leaves the run green; the run summary and
+  one tracking issue ("ci: cookbook recipes failing against driver main",
+  opened, commented on and closed automatically) carry the signal. The issue is
+  closed only by the next run that actually executes the recipes; when both
+  drivers are idle for 8 or more days, close it with a manual dispatch on `main`
+  once the recipes pass (a dispatch from another branch never touches it). No pull
+  request runs it, and it cannot block a merge.
+
+Measured before/after (#222; "before" = median of real runs since 2026-10-03 with
+the current job set; "after" = the classifier applied to the files of the last 40
+merged pull requests, using the same per-job median durations; billed minutes
+round each job up to a whole minute):
+
+| Event | Before jobs (live) | Before job-min / billed | After jobs (live) | After job-min / billed |
+|-------|-------------------|-------------------------|-------------------|------------------------|
+| Docs-only PR | 21 (12) | 13.3 / 24 | 10 (0) | 1.6 / 10 |
+| Dependabot pip recipe bump | 21 (12) | 13.3 / 24 | 11 (2) | 2.9 / 11 |
+| Path-selected PR (median of `pr` tier) | 21 (12) | 13.3 / 24 | 11.5 (2) | 4.3 / 13 |
+| CI or shared-infrastructure PR | 21 (12) | 13.3 / 24 | 20 (10) | 13.7 / 26 |
+| Last 40 merged PRs, total | 840 (480) | 532 / 960 | 598 (204) | 323 / 734 |
+| Push to `main` (`ci.yml` + `smoke-test.yml`) | 21 (12) | 16.3 / 28 | 17 (8) | 11.9 / 22 |
+| Schedule | 2 (2) daily | 6.1 / 7 per day | unchanged daily, plus `ci.yml` weekly 15 (6) | + ~5.7 / 15 per week |
+
 ---
+
+### Job timeouts
+
+Every executing job sets an integer `timeout-minutes` instead of GitHub's
+360-minute default (#228): 2–5 minutes for gates and small jobs, 10 for lint and
+the docs build, 15 for the offline checks and the docs deploy, 30 for the PR smoke
+lanes, and 60 for `smoke-test.yml`'s `verify` job, whose step-level timeouts add up
+to 57 (plus a few untimed setup steps; the observed maximum is 4 minutes).
+Jobs that call the organization's reusable workflows (`doc-lint`, `live-smoke`)
+cannot set a timeout; those callees are an exact allowlist.
+`tests/test_workflow_timeouts.py` (run by `make check`) reads every workflow and
+fails when an executing job lacks a bounded timeout, when a new external caller is
+not allowlisted, or when `CI Gate` loses `if: always()` or its short timeout.
 
 ## Adding Examples
 
@@ -164,6 +263,33 @@ all fail the command. A successful summary has at least one pass and no failures
 or skips. Ordinary recipe failures are collected so the remaining selected
 recipes still produce diagnostics.
 
+To reproduce it from a clean checkout, use a Python 3.11+ virtual environment and
+run `make up`, `make deps`, `make verify`. `make deps` installs `pytest`,
+`sqlalchemy-cubrid[pycubrid]` and the `requirements.txt` of every golden-backed
+example (a directory that owns `expected/`) in one pip resolver call, so
+`PIP_CONSTRAINT` applies to all of them. The same discovery
+(`scripts/example_requirements.py`) backs `scripts/release_smoke.py
+install-examples` in CI; it fails, and so does `make deps`, if a
+golden-backed `requirements.txt` path contains whitespace. Before running anything, `make verify` checks that the
+selected examples' requirements are installed and stops once with "run
+`make deps` first" if not.
+
+Each script runs through `scripts/run_example.py` with a `VERIFY_TIMEOUT`
+wall-clock limit (default 60 seconds; the slowest golden took about 7 seconds on
+CUBRID 11.4) and stdin redirected from `/dev/null`. The script runs in its own
+process group, and the whole group (including helpers it started) is killed on
+timeout, when the script exits, and when the runner gets SIGINT, SIGTERM or
+SIGHUP (it then exits 128 + the signal number). The runner is POSIX-only and
+exits with "run_example.py requires POSIX process groups" elsewhere. Every
+result is classified as `✓ PASS`, `✗ MISMATCH` (with a diff), `✗ EXEC-ERROR`
+(exit status and the last 20 output lines; a script killed by a signal N reports
+128 + N), `⏱ TIMEOUT` (the last 20 lines; only when exit 124 comes with the
+runner's `run_example: timed out after` line, so a script that itself exits 124
+is an `EXEC-ERROR`),
+`✗ NORMALIZE-ERROR`, `✗ READ-ERROR` (golden read error) or `? SKIP`, and the
+summary counts each class. Under GitHub Actions each failure also emits an
+`::error file=...::` annotation.
+
 This is enforced: `scripts/check_expected_coverage.py` (run by `make verify` and
 the smoke-test workflow) fails if any runnable `<dir>/*.py` inside a directory
 that owns an `expected/` folder has no matching `expected/<name>.expected`
@@ -179,14 +305,21 @@ release far below anything this cookbook runs against. `SUPPORT_MATRIX.md`'s
 "Driver & Framework Versions" table is the single documented floor
 (`pycubrid>=1.6.1`, `sqlalchemy-cubrid>=1.0`); recipes that need more pin a
 higher floor only when SUPPORT_MATRIX.md explains why (the `[^async]`
-footnote's "advanced" SQLAlchemy recipes at `>=1.4.2`; `fundamentals/connect`,
+footnote's "advanced" SQLAlchemy recipes at `>=1.4.2` and `fundamentals/async` at `>=1.5`; `fundamentals/connect`,
 `fundamentals/orm-basics` and the full example apps under `templates/` at the
 `>=1.7,<2` line the drivers are actually published as; `fundamentals/pycubrid`
-at `>=1.8,<2` for errno-carrying batch errors and the CAS-session fix).
+at `>=1.9,<2` for errno-carrying batch errors, the CAS-session fix and typed collection binding;
+`fundamentals/sqlalchemy` at `pycubrid>=1.9,<2` and `sqlalchemy-cubrid>=1.9` for typed collection binding).
 `scripts/check_dependency_floors.py` (run by `make check`) fails on a bare
 driver requirement, a floor below its applicable minimum, or an undocumented
 custom floor — add it as a named exception in both the script and
-SUPPORT_MATRIX.md instead of pinning it ad hoc.
+SUPPORT_MATRIX.md instead of pinning it ad hoc. The checker accepts extras
+(`sqlalchemy-cubrid[pycubrid]>=1.0`) and spaces around the specifier. Floors are
+also installed and run: the `Driver floors (CUBRID 11.4)` CI lane
+(`scripts/driver_floors.py`, see [CI tiers](#ci-tiers)) installs each floor with
+`==` and runs representative goldens; a new directory-specific floor must be
+added to a floor set there, or `tests/test_dependency_floors.py` fails. Run it
+locally against `make up` with `python scripts/driver_floors.py run`.
 
 #### Release smoke dependencies
 
@@ -232,7 +365,7 @@ These inputs are read from the event JSON and follow the same validation, exact
 PyPI install, bounded retry, pinning, origin check and summary as a release
 dispatch; an invalid, unavailable or mismatched release fails instead of testing
 the latest release. A manual run with the default inputs (`package=latest`, empty
-`version`), like pushes, pull requests and the nightly schedule, is an ordinary
+`version`), like pushes and the nightly schedule, is an ordinary
 smoke run on the latest published releases and is reported as not a release
 verification.
 
@@ -282,8 +415,8 @@ Each request gets its own non-cancelling concurrency group (event, package, vers
 request id and run), so two verifications never replace each other and a called run
 never shares the caller's group.
 
-**Result.** The run's `conclusion` is `success` only when both CUBRID smoke jobs pass
-and every job installed exactly the requested version from PyPI. The
+**Result.** The run's `conclusion` is `success` only when every smoke job passes (CUBRID 11.2 and
+11.4 on Python 3.12, plus CUBRID 11.4 on Python 3.11) and every job installed exactly the requested version from PyPI. The
 `Release verification report` job then publishes, for every release request:
 
 - a job summary table (`request_id`, `package`, `requested_version`,
@@ -307,10 +440,11 @@ and every job installed exactly the requested version from PyPI. The
   "run": {"id": "…", "attempt": "1", "url": "https://github.com/…/actions/runs/…",
           "commit": "<cookbook SHA>", "event": "repository_dispatch"},
   "matrix": [
-    {"cubrid": "11.2", "request_valid": true, "installed_version": "1.8.0",
+    {"cubrid": "11.2", "python": "3.12", "request_valid": true, "installed_version": "1.8.0",
      "origin": "package index", "server": "11.2.x", "verification": "passed",
      "result": "success"},
-    {"cubrid": "11.4", "…": "…"}
+    {"cubrid": "11.4", "python": "3.12", "…": "…"},
+    {"cubrid": "11.4", "python": "3.11", "…": "…"}
   ]
 }
 ```
@@ -386,10 +520,15 @@ following job with `if: always()` can report them.
   artifacts are uploaded to and downloaded from the caller's run with the runner's
   own artifact token. The call inherits no secrets.
 - The jobs appear in the caller's run as `<calling job> / Smoke Tests (CUBRID 11.2)`,
-  `… (CUBRID 11.4)` and `… / Release verification report`, and upload the artifacts
-  `release-verification-part-cubrid-11.2`, `release-verification-part-cubrid-11.4`
-  and `release-verification-<request_id>`. Call the workflow at most once per
+  `… (CUBRID 11.4)`, `… (CUBRID 11.4, Python 3.11)` and
+  `… / Release verification report`, and upload the artifacts
+  `release-verification-part-cubrid-11.2`, `release-verification-part-cubrid-11.4`,
+  `release-verification-part-cubrid-11.4-py3.11` and `release-verification-<request_id>`. Call the workflow at most once per
   caller run.
+
+A pre-publish **candidate mode** (verifying the caller's built wheel before
+`publish`) is proposed in [docs/internal/rc-verification-design.md](docs/internal/rc-verification-design.md)
+(#240); it is not implemented yet, and the contract above is unchanged.
 
 Run the smoke dependency guards without a database or network:
 
@@ -450,7 +589,7 @@ is built from the repository docs; the repository files stay the source of truth
 This project uses [Ruff](https://docs.astral.sh/ruff/) for linting and formatting.
 
 - **Line length**: 100 characters
-- **Target Python**: 3.10+
+- **Target Python**: 3.11+
 - **Formatter**: `ruff format`
 - **Linter**: `ruff check`
 
@@ -535,6 +674,19 @@ pinning the caller alone does not freeze those resources.
 
 Explain unavailable local checks so maintainers can arrange validation. A reason
 or an AI review does not waive the CI or live checks required before merge.
+
+### Code ownership
+
+`.github/CODEOWNERS` routes review requests for a small set of high-blast-radius
+surfaces to the maintainers: `.github/workflows/` (including the reusable
+`smoke-test.yml` release verification contract) and the composite actions in
+`.github/actions/`, `.github/dependabot.yml`, `.github/CODEOWNERS`, `SECURITY.md`,
+and the shared validation and golden-output infrastructure (`Makefile`,
+`scripts/`, the shared tests in `tests/`, `docker-compose.yml`, `pyproject.toml`).
+Individual recipes, and recipe-specific tests such as `tests/test_ai_agent*.py`,
+are intentionally not owned, so ordinary recipe contributions need no special
+reviewer. CODEOWNERS is routing only, not a security boundary, and does not by
+itself make any approval mandatory.
 
 ---
 

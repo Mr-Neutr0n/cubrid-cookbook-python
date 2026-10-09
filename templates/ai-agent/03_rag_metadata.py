@@ -66,7 +66,7 @@ SAMPLE_DOCS = [
         "source": "https://github.com/cubrid-lab/pycubrid",
         "content": "pycubrid is a pure Python DB-API 2.0 driver for CUBRID. "
         "It supports sync and async connections, LOB handling, "
-        "parameterized queries, and works on Python 3.10+.",
+        "parameterized queries, and works on Python 3.11+.",
         "tags": ["driver", "python", "getting-started"],
         "metadata": {"author": "cubrid-lab", "type": "documentation", "version": "1.7"},
     },
@@ -160,7 +160,10 @@ def keyword_search(
     results = []
     rows = cur.fetchall()
     for row in rows:
-        # The released driver returns raw collection payloads; TABLE() reads elements.
+        # This template keeps the pycubrid>=1.7 floor and the default connection, which
+        # returns raw collection payloads; TABLE() reads elements on any version.
+        # With decode_collections=True the column itself decodes (see
+        # fundamentals/pycubrid/10_collection_columns.py).
         cur.execute(
             "SELECT t.tag FROM rag_documents, TABLE(tags) AS t(tag) WHERE id = ?",
             [row[0]],
