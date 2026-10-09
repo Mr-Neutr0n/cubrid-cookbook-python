@@ -263,6 +263,33 @@ all fail the command. A successful summary has at least one pass and no failures
 or skips. Ordinary recipe failures are collected so the remaining selected
 recipes still produce diagnostics.
 
+To reproduce it from a clean checkout, use a Python 3.11+ virtual environment and
+run `make up`, `make deps`, `make verify`. `make deps` installs `pytest`,
+`sqlalchemy-cubrid[pycubrid]` and the `requirements.txt` of every golden-backed
+example (a directory that owns `expected/`) in one pip resolver call, so
+`PIP_CONSTRAINT` applies to all of them. The same discovery
+(`scripts/example_requirements.py`) backs `scripts/release_smoke.py
+install-examples` in CI; it fails, and so does `make deps`, if a
+golden-backed `requirements.txt` path contains whitespace. Before running anything, `make verify` checks that the
+selected examples' requirements are installed and stops once with "run
+`make deps` first" if not.
+
+Each script runs through `scripts/run_example.py` with a `VERIFY_TIMEOUT`
+wall-clock limit (default 60 seconds; the slowest golden took about 7 seconds on
+CUBRID 11.4) and stdin redirected from `/dev/null`. The script runs in its own
+process group, and the whole group (including helpers it started) is killed on
+timeout, when the script exits, and when the runner gets SIGINT, SIGTERM or
+SIGHUP (it then exits 128 + the signal number). The runner is POSIX-only and
+exits with "run_example.py requires POSIX process groups" elsewhere. Every
+result is classified as `✓ PASS`, `✗ MISMATCH` (with a diff), `✗ EXEC-ERROR`
+(exit status and the last 20 output lines; a script killed by a signal N reports
+128 + N), `⏱ TIMEOUT` (the last 20 lines; only when exit 124 comes with the
+runner's `run_example: timed out after` line, so a script that itself exits 124
+is an `EXEC-ERROR`),
+`✗ NORMALIZE-ERROR`, `✗ READ-ERROR` (golden read error) or `? SKIP`, and the
+summary counts each class. Under GitHub Actions each failure also emits an
+`::error file=...::` annotation.
+
 This is enforced: `scripts/check_expected_coverage.py` (run by `make verify` and
 the smoke-test workflow) fails if any runnable `<dir>/*.py` inside a directory
 that owns an `expected/` folder has no matching `expected/<name>.expected`
