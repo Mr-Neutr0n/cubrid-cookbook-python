@@ -71,6 +71,15 @@ CI runs the same `make check` command on every pull request (see
 [CI tiers](#ci-tiers) for which live lanes run on top of it).
 The repository is an example collection, so `pip install -e .` is not supported.
 
+### CHANGELOG sections
+
+`CHANGELOG.md` `###` headings use the standard list, in this order and only when
+they have content: Upgrade notes, Added, Changed, Deprecated, Removed, Fixed,
+Security, Performance, Documentation, CI, Tests. Write `Documentation`, not
+`Docs`, and put tooling entries under `CI` or `Changed`. `make check-docs` runs
+`scripts/lint_changelog.py`, which enforces this for `[Unreleased]` and for releases
+after 0.2.0.
+
 ### Dependency updates
 
 `.github/dependabot.yml` keeps dependencies current without flooding the queue:
