@@ -61,20 +61,50 @@ identifying the problematic identifier.
 
 ---
 
-## 3. DDL Auto-Commits
+## 3. DDL Is Transactional Only While Autocommit Is Off
 
 **Status**: Server behavior (by design)
 
-All DDL statements (`CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, etc.) implicitly
-commit the current transaction. This means:
+CUBRID DDL (`CREATE TABLE`, `ALTER TABLE`, `DROP TABLE`, `CREATE INDEX`, ...)
+runs inside the current transaction, like DML. It does **not** implicitly
+commit. What decides when it commits is the client's autocommit mode:
 
-- Migrations are not transactional
-- You cannot roll back DDL changes
-- Mix of DDL and DML in one transaction may produce unexpected commits
+- **Autocommit off** (pycubrid's default, and what sqlalchemy-cubrid sets on
+  every connection): DDL stays uncommitted until `COMMIT`, and `ROLLBACK`
+  undoes it, together with any DML in the same transaction. This is why
+  sqlalchemy-cubrid's Alembic implementation reports `transactional_ddl = True`
+  (since 1.8.0): by default a failed `alembic upgrade` rolls back the whole run,
+  including the `alembic_version` update (see the `transaction_per_migration`
+  caveat below).
+- **Autocommit on** (`conn.autocommit = True`, SQLAlchemy
+  `isolation_level="AUTOCOMMIT"`, csql's default auto-commit mode,
+  or a client such as JDBC that defaults to autocommit): every statement,
+  DDL or DML, commits on its own, so there is nothing left to roll back.
 
-### Workaround
+Verified live on CUBRID 11.2 and 11.4 (this cookbook) and on 10.2 and 11.4
+(sqlalchemy-cubrid's transactional-DDL tests).
 
-Separate DDL operations from DML transactions. Run schema changes independently.
+```python
+conn = pycubrid.connect(...)  # autocommit is off by default
+cur = conn.cursor()
+cur.execute("CREATE TABLE t_tmp (id INT)")
+conn.rollback()  # t_tmp no longer exists
+```
+
+### Caveats
+
+- **Schema locks are held until commit.** Uncommitted DDL keeps its schema lock
+  on the table, so other sessions that touch the table wait until the
+  transaction ends (CUBRID's default `lock_timeout` is unlimited). Commit DDL
+  promptly; for long Alembic migrations set `transaction_per_migration=True` in
+  `context.configure()` so each revision commits and releases its locks.
+- **Offline (`alembic upgrade --sql`) scripts** must be run with
+  `csql --no-auto-commit --no-single-line`; in csql's default modes every
+  statement commits and a failing statement does not stop the script.
+
+See sqlalchemy-cubrid's
+[Alembic guide](https://github.com/cubrid-lab/sqlalchemy-cubrid/blob/main/docs/ALEMBIC.md#transactional-ddl)
+for details.
 
 ---
 
